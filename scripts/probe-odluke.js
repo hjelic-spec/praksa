@@ -5,7 +5,7 @@
 import { config } from '../src/config.js';
 import { fetchText } from '../src/http.js';
 import * as cheerio from 'cheerio';
-import { pickSearchForm, firstPage, decisionTextFromHtml, metadataFromText, search } from '../src/sources/odluke.js';
+import { pickSearchForm, firstPage, fetchDecision, search } from '../src/sources/odluke.js';
 
 const query = process.argv[2] ?? 'naknada nematerijalne štete';
 const c = config.odluke;
@@ -39,8 +39,8 @@ if (!results.length) {
 for (const r of results) console.log(`   - ${r.naslov}\n     ${r.url}`);
 
 console.log(`\n3) Dohvaćam prvu odluku`);
-const text = decisionTextFromHtml(await fetchText(results[0].url));
+const { tekst: text, meta } = await fetchDecision(results[0]);
 console.log(`   Duljina teksta: ${text.length} znakova`);
-console.log('   Metapodaci iz teksta:', metadataFromText(text));
+console.log('   Metapodaci:', meta);
 console.log(`   Početak:\n${text.slice(0, 800)}`);
 console.log('\nAko tekst sadrži izbornike ili nedostaje, postavite decision.textSelector u odluke.config.json.');

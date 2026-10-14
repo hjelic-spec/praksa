@@ -2,7 +2,7 @@
 // a ne stvarnu strukturu odluke.sudovi.hr (za to služi `npm run probe`).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickSearchForm, parseResults, canonicalDecisionUrl, decisionTextFromHtml, metadataFromText } from '../src/sources/odluke.js';
+import { pickSearchForm, parseResults, canonicalDecisionUrl, decisionTextFromHtml, metadataFromText, metadataFromHtml, siteDate } from '../src/sources/odluke.js';
 
 const SEARCH_PAGE = 'https://primjer.test/Document/AdvancedSearch';
 
@@ -34,12 +34,38 @@ test('rezultati: poveznice na odluke, kanonski URL i sljedeća stranica', () => 
     <table><tr><td><a href="/Document/View?id=${ID1}&q=naknada+%C5%A1tete">Rev 1/2020</a> Vrhovni sud, 2020</td></tr>
     <tr><td><a href="/Document/View?id=${ID2}">Gž-2/2021</a></td></tr>
     <tr><td><a href="/Document/View?id=${ID1}">isti dokument bez q</a></td></tr></table>
-    <a href="/Document/Results?page=2">Sljedeća</a>`;
+    <ul class="pagination">
+      <li class="page-item disabled"><a class="page-link" href="" aria-label="Previous"></a></li>
+      <li class="page-item active"><a class="page-link" href="/Document/DisplayList?page=1&amp;q=x">1</a></li>
+      <li class="page-item"><a class="page-link" href="/Document/DisplayList?page=2&amp;q=x" aria-label="Next"><img></a></li>
+    </ul>`;
   const { results, next } = parseResults(html, SEARCH_PAGE);
   assert.equal(results.length, 2, 'ista odluka s različitim q= je jedan rezultat');
   assert.equal(results[0].url, `https://primjer.test/Document/View?id=${ID1}`);
   assert.match(results[0].isjecak, /Vrhovni sud/);
-  assert.equal(next, 'https://primjer.test/Document/Results?page=2');
+  assert.equal(next, 'https://primjer.test/Document/DisplayList?page=2&q=x');
+
+  const last = `<ul class="pagination"><li class="page-item disabled"><a class="page-link" href="" aria-label="Next"></a></li></ul>`;
+  assert.equal(parseResults(last, SEARCH_PAGE).next, null, 'na zadnjoj stranici nema sljedeće');
+});
+
+test('datum iz sučelja u obliku tražilice', () => {
+  assert.equal(siteDate('2024-03-05'), '5.3.2024.');
+  assert.equal(siteDate('5.3.2024.'), '5.3.2024.');
+});
+
+test('tekst iz .decision-text i metapodaci s ploče odluke', () => {
+  const html = `<html><body><div class="metadata">
+    <div class="metadata-item" data-metadata-type="decision-number"><p class="metadata-content">Rev-353/1992-2</p></div>
+    <div class="metadata-item" data-metadata-type="court"><p class="metadata-content">Vrhovni sud Republike Hrvatske</p></div>
+    <div class="metadata-item" data-metadata-type="ecli-number"><p class="metadata-content">ECLI:HR:VSRH:1992:659</p></div></div>
+    <a>Ispiši</a><div class="decision-text"><style>.x{margin:0}</style><p>P R E S U D A</p><p>U Zagrebu, 22. travnja 1992.</p><p>Predsjednik vijeća:</p></div></body></html>`;
+  const t = decisionTextFromHtml(html);
+  assert.ok(!t.includes('Ispiši') && !t.includes('margin'));
+  assert.match(t, /1992\.\n+Predsjednik/, 'odlomci ostaju odvojeni');
+  assert.deepEqual(metadataFromHtml(html), {
+    poslovniBroj: 'Rev-353/1992-2', ecli: 'ECLI:HR:VSRH:1992:659', sud: 'Vrhovni sud Republike Hrvatske',
+  });
 });
 
 test('tekst odluke bez navigacije i metapodaci', () => {

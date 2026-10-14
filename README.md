@@ -26,35 +26,27 @@ Upit nije samo pojam nego **opis primjera ili događaja**. Aplikacija:
 
 Ovo nije pravni savjet.
 
-## Važno: stanje integracije s odluke.sudovi.hr
+## Stanje integracije s odluke.sudovi.hr
 
-Kod je napisan u okruženju iz kojeg **odluke.sudovi.hr nije bio dostupan** (ni izravno ni preko alata za dohvat stranica).
-Jedino što je potvrđeno jest oblik poveznice na odluku, iz javno indeksiranih URL-ova:
-`https://odluke.sudovi.hr/Document/View?id=<GUID>`, često s dodanim `&q=<upit>`.
-To je upisano u `results.linkPattern`, a parametar `q` se uklanja kako se ista odluka pronađena
-različitim upitima ne bi dohvaćala i analizirala više puta.
+Provjereno na stvarnoj stranici (`npm run probe`, 14.10.2026.) i upisano u `src/sources/odluke.config.json`:
 
-Nije provjereno: postoji li stranica `/Document/AdvancedSearch` i kako izgleda obrazac, paginacija rezultata
-te raspored teksta na stranici odluke. Adapter (`src/sources/odluke.js`) zato:
+- pretraga: `GET /Document/DisplayList?q=<upit>` (način `template`); datum odluke `dd_from` / `dd_to`
+  u obliku `D.M.YYYY.` (adapter pretvara datume iz sučelja);
+- rezultati: poveznice `/Document/View?id=<GUID>` (parametar `q` se uklanja kako se ista odluka pronađena
+  različitim upitima ne bi analizirala više puta), 10 po stranici, paginacija `?page=N` (gumb *Next*);
+- tekst odluke: `.decision-text`; poslovni broj, sud i ECLI s ploče metapodataka (`.metadata-item[data-metadata-type]`).
 
-- sam pročita obrazac s `/Document/AdvancedSearch` (uključujući skrivena polja i kolačiće) i upiše upit u tekstualno polje;
-- rezultate prepoznaje po `results.linkPattern`;
-- tekst odluke uzima iz cijele stranice bez navigacije.
-
-Prije prve upotrebe pokrenite:
+Ako se stranica promijeni, ponovno pokrenite i prema ispisu prilagodite konfiguraciju:
 
 ```bash
 npm run probe -- "naknada nematerijalne štete"
 ```
 
-Skripta ispiše polja obrasca, pronađene rezultate i početak teksta prve odluke. Ako nešto ne štima,
-popunite odgovarajuća polja u `src/sources/odluke.config.json` (`queryField`, `filterFields`,
-`results.linkPattern`, `decision.textSelector` ili `search.mode: "template"`).
-Filteri u sučelju (npr. datum) pojavljuju se tek kad se u `filterFields` upiše naziv polja.
+Tražilica podržava i druge parametre (vrsta suda `ct`, pojedini sud `os`/`zs`/`ts`/`us`, vrsta odluke `vo`,
+poslovni broj `pb`, ECLI `ecli`); u sučelju se pojavljuju kad se dodaju u `filterFields` (i u `FILTER_LABELS` u `public/app.js`).
 
 Ograničenja koja nisu riješena:
 - odluke dostupne samo kao PDF/DOC nisu podržane (tekst se ne izvlači);
-- ako tražilica rezultate učitava JavaScriptom, auto-form način neće raditi – tada treba `template` način s URL-om zahtjeva iz alata za razvojne programere preglednika;
 - uvjeti korištenja i `robots.txt` stranice nisu provjereni – provjerite ih prije šire upotrebe. Adapter šalje najviše jedan zahtjev u 1,5 s i sprema stranice u `data/cache`.
 
 ## Pokretanje
