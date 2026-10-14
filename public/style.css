@@ -29,3 +29,18 @@ dt { font-weight: 600; margin-top: 8px; }
 dd { margin: 0 0 4px; }
 #status { color: var(--muted); }
 #upozorenja { font-size: .85rem; color: var(--warn); }
+select { font: inherit; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); max-width: 100%; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button.link { background: none; border: 0; padding: 0 4px; color: var(--muted); font-size: .85rem; text-decoration: underline; }
+.row.center { align-items: center; }
+#predmet-bar { margin-top: 0; }
+#predmet-bar .meta { margin: 8px 0 0; }
+#pretrage-lista li { margin: 4px 0; }
+.stavke { list-style: none; padding: 0; }
+.stavke li { margin: 4px 0; }
+code { font-size: .9em; background: var(--bg); padding: 0 4px; border-radius: 4px; }
+pre { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font: inherit; }
+h3.group { margin: 24px 0 0; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.biljeska { display: grid; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.biljeska textarea { width: 100%; }
+@media (max-width: 600px) { #dodatni { width: 100%; } }

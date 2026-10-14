@@ -180,7 +180,14 @@ export function metadataFromText(text) {
 export function metadataFromHtml(html) {
   const $ = cheerio.load(html);
   const get = (type) => normalizeWs($(`.metadata-item[data-metadata-type="${type}"] .metadata-content`).first().text()) || null;
-  return { poslovniBroj: get('decision-number'), ecli: get('ecli-number'), sud: get('court') };
+  return {
+    poslovniBroj: get('decision-number'),
+    ecli: get('ecli-number'),
+    sud: get('court'),
+    datum: get('decision-date'),
+    pravomocnost: get('decision-finality'),
+    vrsta: get('decision-type'),
+  };
 }
 
 export function decisionTextFromHtml(html) {
@@ -198,6 +205,7 @@ export async function fetchDecision(ref) {
   const tekst = decisionTextFromHtml(html);
   const fromText = metadataFromText(tekst);
   const fromHtml = metadataFromHtml(html);
-  const meta = Object.fromEntries(Object.keys(fromText).map((k) => [k, fromHtml[k] ?? fromText[k]]));
+  const meta = Object.fromEntries([...new Set([...Object.keys(fromText), ...Object.keys(fromHtml)])]
+    .map((k) => [k, fromHtml[k] ?? fromText[k] ?? null]));
   return { ...ref, tekst, meta };
 }

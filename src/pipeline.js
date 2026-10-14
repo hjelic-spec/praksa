@@ -8,6 +8,7 @@ import * as odluke from './sources/odluke.js';
 import * as local from './sources/local.js';
 import { caseKey, extractCaseNumbers, extractEuReferences, quoteInText } from './extract.js';
 import { verifyAll } from './eu.js';
+import { weigh } from './authority.js';
 
 const SOURCES = { odluke, local };
 
@@ -67,13 +68,13 @@ export function linkRelated(items) {
   return items;
 }
 
-export async function runQuery({ opis, filters = {}, sources = config.sources, deps = {} }, progress = () => {}) {
+export async function runQuery({ opis, stajaliste = '', filters = {}, sources = config.sources, deps = {} }, progress = () => {}) {
   const L = deps.llm ?? llm;
   const S = deps.sources ?? SOURCES;
   const upozorenja = [];
 
   progress({ korak: 'razrada', poruka: 'Razrađujem opis i pripremam upite za tražilicu…' });
-  const plan = await L.planQuery(opis);
+  const plan = await L.planQuery(opis, stajaliste);
 
   progress({ korak: 'pretrazivanje', poruka: `Pretražujem (${plan.upiti.length} upita)…` });
   const refs = new Map();
@@ -95,7 +96,7 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, d
   // Prednost odlukama koje je pronašlo više upita
   const candidates = [...refs.values()].sort((a, b) => b.upiti.length - a.upiti.length).slice(0, config.maxDecisions);
   if (!candidates.length) {
-    return { opis, plan, odluke: [], sinteza: null, upozorenja: [...upozorenja, 'Nije pronađena nijedna odluka.'] };
+    return { opis, stajaliste, plan, odluke: [], sinteza: null, upozorenja: [...upozorenja, 'Nije pronađena nijedna odluka.'] };
   }
 
   let done = 0;
@@ -105,7 +106,7 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, d
       if (!d.tekst || d.tekst.length < 200) throw new Error('tekst odluke nije pronađen na stranici');
       const skraceno = d.tekst.length > config.maxDecisionChars;
       const tekst = skraceno ? d.tekst.slice(0, config.maxDecisionChars) : d.tekst;
-      const analiza = await L.assessDecision(opis, plan, d, tekst);
+      const analiza = await L.assessDecision(opis, plan, d, tekst, stajaliste);
       analiza.relevantnost = Math.max(0, Math.min(100, Math.round(analiza.relevantnost)));
 
       const { eu, ekljp } = extractEuReferences(d.tekst);
@@ -115,6 +116,7 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, d
         naslov: d.naslov,
         izvor: d.izvor,
         meta: d.meta,
+        tezina: weigh(d.meta),
         upiti: ref.upiti,
         skraceno,
         analiza,
@@ -140,7 +142,7 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, d
   let sinteza = null;
   if (relevant.length) {
     progress({ korak: 'sinteza', poruka: 'Izrađujem sintezu prakse…' });
-    sinteza = await L.synthesize(opis, relevant);
+    sinteza = await L.synthesize(opis, relevant, stajaliste);
   }
-  return { opis, plan, odluke: items, sinteza, upozorenja };
+  return { opis, stajaliste, plan, odluke: items, sinteza, upozorenja };
 }

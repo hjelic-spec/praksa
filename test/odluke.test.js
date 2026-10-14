@@ -65,6 +65,7 @@ test('tekst iz .decision-text i metapodaci s ploče odluke', () => {
   assert.match(t, /1992\.\n+Predsjednik/, 'odlomci ostaju odvojeni');
   assert.deepEqual(metadataFromHtml(html), {
     poslovniBroj: 'Rev-353/1992-2', ecli: 'ECLI:HR:VSRH:1992:659', sud: 'Vrhovni sud Republike Hrvatske',
+    datum: null, pravomocnost: null, vrsta: null,
   });
 });
 

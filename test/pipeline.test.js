@@ -75,3 +75,16 @@ test('ista odluka iz više upita analizira se jednom', async () => {
   assert.equal(analiza, 1);
   assert.deepEqual(r.odluke[0].upiti, ['a', 'b', 'c']);
 });
+
+test('stajalište ide u razradu, analizu i sintezu; težina se računa', async () => {
+  const seen = [];
+  const l = {
+    async planQuery(o, s) { seen.push(['plan', s]); return llm.planQuery(); },
+    async assessDecision(o, p, d, t, s) { seen.push(['analiza', s]); return llm.assessDecision(o, p, d, t); },
+    async synthesize(o, items, s) { seen.push(['sinteza', s]); return llm.synthesize(o, items); },
+  };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', stajaliste: 'prijevoznik odgovara', sources: ['t'], deps: { llm: l, sources: { t: source } } });
+  assert.ok(seen.length >= 3 && seen.every(([, s]) => s === 'prijevoznik odgovara'));
+  assert.equal(r.stajaliste, 'prijevoznik odgovara');
+  assert.ok(r.odluke.every((d) => 'tezina' in d));
+});
