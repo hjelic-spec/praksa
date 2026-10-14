@@ -67,12 +67,29 @@ function isResultLink(href, searchUrl) {
   }
 }
 
+// Rezultati pretrage na odluke.sudovi.hr vode na /Document/View?id=<GUID>, često s dodanim
+// "&q=<upit>" (vidljivo u javno indeksiranim poveznicama). Bez uklanjanja tog parametra ista
+// bi odluka pronađena različitim upitima bila dohvaćena i analizirana više puta.
+export function canonicalDecisionUrl(href) {
+  try {
+    const u = new URL(href);
+    const id = u.searchParams.get('id');
+    if (/\/Document\/View$/i.test(u.pathname) && id) return `${u.origin}${u.pathname}?id=${encodeURIComponent(id)}`;
+    u.searchParams.delete('q');
+    return u.toString();
+  } catch {
+    return href;
+  }
+}
+
 export function parseResults(html, pageUrl) {
   const $ = cheerio.load(html);
   const seen = new Map();
   $('a[href]').each((_, a) => {
-    const href = abs($(a).attr('href'), pageUrl);
-    if (!isResultLink(href, pageUrl) || seen.has(href)) return;
+    const raw = abs($(a).attr('href'), pageUrl);
+    if (!isResultLink(raw, pageUrl)) return;
+    const href = canonicalDecisionUrl(raw);
+    if (seen.has(href)) return;
     const row = $(a).closest('tr, li, article, .row, div');
     seen.set(href, {
       url: href,

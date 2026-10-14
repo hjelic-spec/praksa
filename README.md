@@ -18,7 +18,7 @@ Upit nije samo pojam nego **opis primjera ili događaja**. Aplikacija:
 | Dio | Kako nastaje | Pouzdanost |
 |---|---|---|
 | Citat iz odluke | model ga predlaže, kod ga traži doslovno u tekstu | označen ✔ ili ⚠ |
-| Citirani poslovni brojevi | regularni izraz nad tekstom odluke | iz teksta (heuristika može nešto propustiti) |
+| Citirani poslovni brojevi | regularni izraz nad tekstom odluke; povezivanje neovisno o zapisu (`Rev 12/2019-2` = `Rev-12/19`) | iz teksta (heuristika može nešto propustiti ili pogrešno spojiti) |
 | Direktive/uredbe → CELEX | regularni izraz + pravila numeracije EU | iz teksta; postojanje se provjerava u CELLAR-u (SPARQL) |
 | Predmeti Suda EU (C-…/…) | regularni izraz | iz teksta, poveznica na CURIA |
 | „Moguće poveznice s pravom EU“ | prijedlog modela | **pretpostavka**, jasno označena u sučelju |
@@ -28,12 +28,17 @@ Ovo nije pravni savjet.
 
 ## Važno: stanje integracije s odluke.sudovi.hr
 
-Kod je napisan u okruženju iz kojeg **odluke.sudovi.hr nije bio dostupan**, pa struktura stranice
-(nazivi polja obrasca, oblik URL-ova rezultata, raspored teksta odluke) nije provjerena.
-Adapter (`src/sources/odluke.js`) zato:
+Kod je napisan u okruženju iz kojeg **odluke.sudovi.hr nije bio dostupan** (ni izravno ni preko alata za dohvat stranica).
+Jedino što je potvrđeno jest oblik poveznice na odluku, iz javno indeksiranih URL-ova:
+`https://odluke.sudovi.hr/Document/View?id=<GUID>`, često s dodanim `&q=<upit>`.
+To je upisano u `results.linkPattern`, a parametar `q` se uklanja kako se ista odluka pronađena
+različitim upitima ne bi dohvaćala i analizirala više puta.
+
+Nije provjereno: postoji li stranica `/Document/AdvancedSearch` i kako izgleda obrazac, paginacija rezultata
+te raspored teksta na stranici odluke. Adapter (`src/sources/odluke.js`) zato:
 
 - sam pročita obrazac s `/Document/AdvancedSearch` (uključujući skrivena polja i kolačiće) i upiše upit u tekstualno polje;
-- rezultate prepoznaje heuristikom (poveznice pod `/Document/` s identifikatorom);
+- rezultate prepoznaje po `results.linkPattern`;
 - tekst odluke uzima iz cijele stranice bez navigacije.
 
 Prije prve upotrebe pokrenite:

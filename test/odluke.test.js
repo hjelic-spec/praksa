@@ -2,7 +2,7 @@
 // a ne stvarnu strukturu odluke.sudovi.hr (za to služi `npm run probe`).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickSearchForm, parseResults, decisionTextFromHtml, metadataFromText } from '../src/sources/odluke.js';
+import { pickSearchForm, parseResults, canonicalDecisionUrl, decisionTextFromHtml, metadataFromText } from '../src/sources/odluke.js';
 
 const SEARCH_PAGE = 'https://primjer.test/Document/AdvancedSearch';
 
@@ -24,14 +24,20 @@ test('obrazac: skrivena polja, select, tekstualno polje', () => {
   assert.equal(f.fields.find((x) => x.name === 'Upit').label, 'Pojam');
 });
 
-test('rezultati: heuristika poveznica i sljedeća stranica', () => {
+// Oblik /Document/View?id=<GUID>[&q=...] preuzet je iz javno indeksiranih poveznica na
+// odluke.sudovi.hr; GUID-ovi ovdje su izmišljeni.
+const ID1 = '11111111-2222-4333-8444-555555555555';
+const ID2 = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+test('rezultati: poveznice na odluke, kanonski URL i sljedeća stranica', () => {
   const html = `<a href="/Document/AdvancedSearch">Traži</a>
-    <table><tr><td><a href="/Document/View?id=abc-123">Rev 1/2020</a> Vrhovni sud, 2020</td></tr>
-    <tr><td><a href="/Document/View?id=def-456">Gž-2/2021</a></td></tr></table>
+    <table><tr><td><a href="/Document/View?id=${ID1}&q=naknada+%C5%A1tete">Rev 1/2020</a> Vrhovni sud, 2020</td></tr>
+    <tr><td><a href="/Document/View?id=${ID2}">Gž-2/2021</a></td></tr>
+    <tr><td><a href="/Document/View?id=${ID1}">isti dokument bez q</a></td></tr></table>
     <a href="/Document/Results?page=2">Sljedeća</a>`;
   const { results, next } = parseResults(html, SEARCH_PAGE);
-  assert.equal(results.length, 2);
-  assert.equal(results[0].url, 'https://primjer.test/Document/View?id=abc-123');
+  assert.equal(results.length, 2, 'ista odluka s različitim q= je jedan rezultat');
+  assert.equal(results[0].url, `https://primjer.test/Document/View?id=${ID1}`);
   assert.match(results[0].isjecak, /Vrhovni sud/);
   assert.equal(next, 'https://primjer.test/Document/Results?page=2');
 });
@@ -46,4 +52,12 @@ test('tekst odluke bez navigacije i metapodaci', () => {
   assert.equal(m.sud, 'Vrhovni sud Republike Hrvatske');
   assert.equal(m.poslovniBroj, 'Rev 1234/2019-2');
   assert.equal(m.ecli, 'ECLI:HR:VSRH:2020:999');
+});
+
+test('kanonski URL odluke', () => {
+  assert.equal(
+    canonicalDecisionUrl(`https://odluke.sudovi.hr/Document/View?id=${ID1}&q=Us+I-1486%2F2025-3`),
+    `https://odluke.sudovi.hr/Document/View?id=${ID1}`,
+  );
+  assert.equal(canonicalDecisionUrl('https://primjer.test/Document/Other?x=1&q=a'), 'https://primjer.test/Document/Other?x=1');
 });
