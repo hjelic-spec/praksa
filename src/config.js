@@ -4,6 +4,13 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+// Varijable iz .env (npr. ANTHROPIC_API_KEY); one već postavljene u okruženju imaju prednost.
+try {
+  process.loadEnvFile(path.join(root, '.env'));
+} catch (e) {
+  if (e.code !== 'ENOENT') throw e;
+}
+
 function readJson(file) {
   return JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
 }
