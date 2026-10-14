@@ -65,16 +65,40 @@ Ograničenja koja nisu riješena:
 - odluke dostupne samo kao PDF/DOC nisu podržane (tekst se ne izvlači);
 - uvjeti korištenja i `robots.txt` stranice nisu provjereni – provjerite ih prije šire upotrebe. Adapter šalje najviše jedan zahtjev u 1,5 s i sprema stranice u `data/cache`.
 
-## Pokretanje
+## Windows aplikacija
+
+```bash
+npm run postavi-prijavu -- korisnik@primjer.hr   # pristupni podaci ugrađeni u instalaciju (lozinka se upisuje)
+npm run dist         # izradi instalaciju: dist/Praksa Setup <verzija>.exe (prekida se ako nema ugrađene prijave)
+npm run app          # pokreni aplikaciju iz izvornog koda
+```
+
+- **Ugrađena prijava:** `postavi-prijavu` sprema korisničko ime i scrypt sažetak lozinke u `src/prijava-ugradena.json`
+  (nije u gitu). Instalacija tada nema prvog postavljanja – na bilo kojem računalu otvara se samo s tim podacima.
+  Lozinka promijenjena u aplikaciji sprema se u `%APPDATA%\Praksa\prijava.json` i ima prednost; brisanjem te datoteke vraća se ugrađena.
+  Sažetak je u instalaciji, pa onaj tko ima instalaciju može pokušati pogađati lozinku izvan aplikacije – koristite dugu lozinku koja nije uobičajena fraza.
+
+- Instalacija ne traži administratorska prava (instalira se za trenutnog korisnika) i napravi prečac na radnoj površini.
+  Instalacija nije digitalno potpisana, pa Windows SmartScreen pri prvom pokretanju prikaže upozorenje („Više informacija“ → „Svejedno pokreni“).
+- Aplikacija se otvara tek nakon prijave; API ključ se upisuje u Postavkama (otvore se same ako ključa nema).
+  Bez ugrađene prijave (pokretanje iz izvornog koda) pri prvom pokretanju postavlja se korisničko ime i lozinka.
+  Sesija traje dok je aplikacija otvorena (najdulje 8 sati neaktivnosti); nakon 5 krivih lozinki prijava se blokira na 30 sekundi.
+- Podaci su u `%APPDATA%\Praksa`: `prijava.json` (korisnik i scrypt sažetak lozinke), `postavke.json` (API ključ, broj odluka, kontakt),
+  `predmeti\` i `cache\`. Podaci **nisu šifrirani** – štiti ih pristup Windows korisničkom računu.
+- **Zaboravljena promijenjena lozinka:** zatvorite aplikaciju i obrišite `%APPDATA%\Praksa\prijava.json`; vraća se ugrađena prijava (predmeti i postavke ostaju).
+- Svaka pretraga prikazuje procijenjeni trošak (tokeni × cijena modela koji je odgovorio); zbroj po predmetu vidi se uz naziv predmeta.
+
+## Pokretanje iz izvornog koda
 
 Potrebno: Node.js 20+ i Anthropic API ključ.
 
 ```bash
 npm install
-export ANTHROPIC_API_KEY=...
-npm start            # http://127.0.0.1:3000
-npm test             # testovi logike (bez mreže i bez API-ja)
+npm start            # http://127.0.0.1:3000 – prijava kao u aplikaciji, podaci u ./data
+npm test             # testovi (bez mreže i bez API-ja)
 ```
+
+API ključ se upisuje u Postavkama ili u `.env` (`ANTHROPIC_API_KEY=…`).
 
 Postavke (varijable okruženja):
 
@@ -89,7 +113,13 @@ Postavke (varijable okruženja):
 | `PRAKSA_USER_AGENT` | … | upišite kontakt kako bi vas operater stranice mogao kontaktirati |
 
 Troškovi: jedan upit = 1 poziv za razradu + do `PRAKSA_MAX_DECISIONS` poziva za analizu + 1 za sintezu.
-Duge odluke znače mnogo ulaznih tokena; prije veće upotrebe izmjerite potrošnju na nekoliko upita.
+Duge odluke znače mnogo ulaznih tokena. Trošak svake pretrage prikazuje se u sučelju, a broj odluka mijenja se i u Postavkama.
+
+Cjenik se **osvježava automatski**: pri pokretanju (ako je stariji od jednog dana) i zatim svaki dan aplikacija dohvaća
+službenu tablicu cijena s `platform.claude.com/docs/en/about-claude/pricing.md`, provjerava je (dovoljno modela, uključen
+korišteni model, logične vrijednosti) i sprema u `data/cjenik.json`. Ako dohvat ne uspije ili se stranica promijeni pa
+tablica ne prođe provjeru, ostaje zadnji dobar cjenik (ili ugrađeni u `src/pricing.js`), a greška se prikaže u Postavkama.
+Ručno osvježavanje: Postavke → „Osvježi cjenik sada“. `PRAKSA_PRICING_REFRESH=0` isključuje dohvat s mreže.
 
 Za zahtjeve odbijene od sigurnosnih klasifikatora uključen je poslužiteljski `fallbacks: "default"`
 (beta `server-side-fallback-2026-07-01`) – zahtjev se tada automatski ponovi na preporučenom zamjenskom modelu.
@@ -108,6 +138,10 @@ src/llm.js               pozivi Claude API-ja sa strukturiranim izlazom
 src/anonymize.js         lokalna anonimizacija opisa i stajališta
 src/authority.js         težina odluke: razina suda, pravomoćnost, starost
 src/store.js             spremanje predmeta u data/predmeti
+src/auth.js              prijava (scrypt), sesije
+src/settings.js          postavke: API ključ, broj odluka, kontakt
+src/pricing.js           procjena troška iz usage
+electron/main.js         Windows aplikacija (prozor + lokalni poslužitelj)
 src/export.js            izvoz odabranih odluka u .docx
 src/extract.js           regex ekstrakcija: poslovni brojevi, ECLI, EU akti → CELEX, provjera citata
 src/eu.js                provjera CELEX-a u CELLAR SPARQL endpointu

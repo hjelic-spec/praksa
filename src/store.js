@@ -34,12 +34,17 @@ function update(id, fn) {
   return run;
 }
 
+// Zbroj procijenjenog troška svih pretraga predmeta (USD).
+export function totalCost(p) {
+  return Math.round(p.pretrage.reduce((s, x) => s + (x.rezultat?.trosak?.usd ?? 0), 0) * 10000) / 10000;
+}
+
 export async function listPredmeti() {
   const files = await fs.readdir(dir()).catch(() => []);
   const out = [];
   for (const f of files.filter((x) => x.endsWith('.json'))) {
     const p = JSON.parse(await fs.readFile(path.join(dir(), f), 'utf8'));
-    out.push({ id: p.id, naziv: p.naziv, stvoreno: p.stvoreno, izmijenjeno: p.izmijenjeno, brojPretraga: p.pretrage.length });
+    out.push({ id: p.id, naziv: p.naziv, stvoreno: p.stvoreno, izmijenjeno: p.izmijenjeno, brojPretraga: p.pretrage.length, trosakUSD: totalCost(p) });
   }
   return out.sort((a, b) => (b.izmijenjeno ?? '').localeCompare(a.izmijenjeno ?? ''));
 }

@@ -2,3 +2,8 @@ node_modules/
 data/cache/
 .env
 data/predmeti/
+data/prijava.json
+data/postavke.json
+dist/
+data/cjenik.json
+src/prijava-ugradena.json

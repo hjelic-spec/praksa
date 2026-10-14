@@ -57,3 +57,16 @@ test('predmet: pretrage, bilješke, odabir i izvoz', async () => {
 });
 
 test.after(() => fs.rm(tmp, { recursive: true, force: true }));
+
+test('trošak pretrage iz usage', async () => {
+  const { createCostTracker, costOf } = await import('../src/pricing.js');
+  assert.equal(costOf('claude-opus-5-5', { input_tokens: 1_000_000 }), 4);
+  assert.equal(costOf('claude-opus-5-5', { output_tokens: 1_000_000, cache_read_input_tokens: 1_000_000 }), 20.2);
+  const t = createCostTracker();
+  t.add('claude-opus-5-5', { input_tokens: 10_000, output_tokens: 2_000 });
+  t.add('claude-opus-4-8', { input_tokens: 10_000, output_tokens: 1_000 }); // zamjenski model
+  t.add('nepoznat-model', { input_tokens: 5 });
+  assert.deepEqual([t.summary.pozivi, t.summary.ulazniTokeni, t.summary.izlazniTokeni], [3, 20_005, 3_000]);
+  assert.equal(t.summary.usd, 0.04 + 0.04 + 0.05 + 0.025);
+  assert.deepEqual(t.summary.nepoznatiModeli, ['nepoznat-model']);
+});

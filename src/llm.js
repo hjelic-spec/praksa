@@ -5,9 +5,17 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { config } from './config.js';
+import { getApiKey } from './settings.js';
 
+// Klijent se stvara ponovno kad korisnik u postavkama promijeni API ključ.
 let client;
-const getClient = () => (client ??= new Anthropic());
+let clientKey;
+function getClient() {
+  const key = getApiKey();
+  if (!key) throw new Error('API ključ nije postavljen. Upišite ga u Postavkama.');
+  if (!client || clientKey !== key) { client = new Anthropic({ apiKey: key }); clientKey = key; }
+  return client;
+}
 
 const SYSTEM = `Ti si pravni istraživač specijaliziran za hrvatsku sudsku praksu i pravo Europske unije.
 Pravila kojih se strogo držiš:
@@ -19,7 +27,8 @@ Pravila kojih se strogo držiš:
 
 const FALLBACK = { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' };
 
-async function structured(schema, userContent, { effort = 'medium', maxTokens = 16000 } = {}) {
+// track(model, usage): bilježi potrošnju tokena (i kad odgovor ne uspije, jer se i tada naplaćuje).
+async function structured(schema, userContent, { effort = 'medium', maxTokens = 16000, track } = {}) {
   const res = await getClient().beta.messages.parse({
     model: config.model,
     max_tokens: maxTokens,
@@ -28,6 +37,7 @@ async function structured(schema, userContent, { effort = 'medium', maxTokens = 
     messages: [{ role: 'user', content: userContent }],
     ...FALLBACK,
   });
+  track?.(res.model, res.usage);
   if (res.stop_reason === 'refusal') throw new Error('Model je odbio zahtjev.');
   if (res.stop_reason === 'max_tokens') throw new Error('Odgovor modela je prekinut (max_tokens).');
   if (!res.parsed_output) throw new Error('Odgovor modela nije u očekivanom obliku.');
@@ -51,7 +61,7 @@ const stanceBlock = (stajaliste) => (stajaliste
   ? `\n<stajaliste_korisnika>\n${stajaliste}\n</stajaliste_korisnika>\n`
   : '\n<stajaliste_korisnika>nije navedeno</stajaliste_korisnika>\n');
 
-export async function planQuery(opis, stajaliste = '') {
+export async function planQuery(opis, stajaliste = '', track) {
   return structured(PlanSchema, `Korisnik (odvjetnik) traži sudsku praksu za sljedeći opis (pojam, primjer ili događaj). ${ANON_NOTE}
 
 <opis>
@@ -59,7 +69,7 @@ ${opis}
 </opis>
 ${stanceBlock(stajaliste)}
 Razradi pravni problem i predloži upite za tražilicu odluka hrvatskih sudova (odluke.sudovi.hr). Upiti trebaju biti kratki (2-6 riječi), koristiti izraze kakve sudovi pišu u obrazloženjima (npr. "naknada nematerijalne štete prometna nesreća", "ništetnost valutne klauzule CHF"), a mogu sadržavati i oznaku propisa i članka.
-Ako je navedeno stajalište korisnika, predloži upite koji pronalaze odluke u prilog tom stajalištu, ali i odluke koje mu se protive, jer i njih treba poznavati. Oznake anonimizacije ne stavljaj u upite.`, { effort: 'medium', maxTokens: 8000 });
+Ako je navedeno stajalište korisnika, predloži upite koji pronalaze odluke u prilog tom stajalištu, ali i odluke koje mu se protive, jer i njih treba poznavati. Oznake anonimizacije ne stavljaj u upite.`, { effort: 'medium', maxTokens: 8000, track });
 }
 
 export const AssessmentSchema = z.object({
@@ -84,7 +94,7 @@ export const AssessmentSchema = z.object({
   }).describe('Može li se odluka i danas primijeniti: je li donesena prema propisu koji je u međuvremenu izmijenjen ili zamijenjen (npr. ZOO 1978./2005., ZKP 1997./2008., kune/euri), ili je stajalište napušteno. Ovo je procjena modela; upozorenje=true samo ako postoji konkretan razlog.'),
 });
 
-export async function assessDecision(opis, plan, decision, tekst, stajaliste = '') {
+export async function assessDecision(opis, plan, decision, tekst, stajaliste = '', track) {
   const meta = decision.meta ?? {};
   return structured(AssessmentSchema, `${ANON_NOTE}
 
@@ -102,7 +112,7 @@ ${JSON.stringify({ pravna_pitanja: plan.pravna_pitanja, kljucne_cinjenice: plan.
 ${tekst}
 </odluka>
 
-Ocijeni odnosi li se ova odluka na opisani primjer ili događaj, kakav je njezin odnos prema stajalištu korisnika i analiziraj je prema shemi.`, { effort: 'medium' });
+Ocijeni odnosi li se ova odluka na opisani primjer ili događaj, kakav je njezin odnos prema stajalištu korisnika i analiziraj je prema shemi.`, { effort: 'medium', track });
 }
 
 export const SynthesisSchema = z.object({
@@ -115,7 +125,7 @@ export const SynthesisSchema = z.object({
   preporuke_za_daljnje_istrazivanje: z.array(z.string()),
 });
 
-export async function synthesize(opis, analyses, stajaliste = '') {
+export async function synthesize(opis, analyses, stajaliste = '', track) {
   const compact = analyses.map((a) => ({
     oznaka: a.meta?.poslovniBroj ?? a.naslov,
     sud: a.meta?.sud,
@@ -142,5 +152,5 @@ Pri ocjeni prakse veću težinu daj odlukama viših sudova (Ustavni, Vrhovni) i 
 ${JSON.stringify(compact, null, 1)}
 </analizirane_odluke>
 
-Napravi sintezu sudske prakse isključivo na temelju ovih analiza.`, { effort: 'high' });
+Napravi sintezu sudske prakse isključivo na temelju ovih analiza.`, { effort: 'high', track });
 }

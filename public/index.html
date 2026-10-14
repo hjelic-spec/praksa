@@ -8,11 +8,44 @@
 </head>
 <body>
   <header>
-    <h1>Preglednik sudske prakse</h1>
+    <div class="header-row">
+      <h1>Preglednik sudske prakse</h1>
+      <div class="row center">
+        <span id="korisnik" class="meta"></span>
+        <button type="button" id="otvori-postavke" class="secondary">Postavke</button>
+        <button type="button" id="odjava" class="secondary">Odjava</button>
+      </div>
+    </div>
     <p class="sub">Opišite slučaj i stajalište obrane. Alat pretražuje odluke hrvatskih sudova, razvrstava ih na one u prilog i protiv, i povezuje ih s pravom EU.</p>
   </header>
 
   <main>
+    <section id="postavke" class="card" hidden>
+      <h2>Postavke</h2>
+      <form id="postavke-forma">
+        <label for="api-kljuc">Anthropic API ključ</label>
+        <input id="api-kljuc" type="password" autocomplete="off" placeholder="sk-ant-… (ostavite prazno da se ne mijenja)">
+        <p id="kljuc-stanje" class="meta"></p>
+        <label for="max-odluka">Najviše odluka po upitu <span class="meta">(svaka odluka je jedan poziv modela)</span></label>
+        <input id="max-odluka" type="number" min="1" max="30">
+        <label for="kontakt">Kontakt e-pošta za odluke.sudovi.hr <span class="meta">(šalje se u zaglavlju zahtjeva)</span></label>
+        <input id="kontakt" type="email" placeholder="ured@primjer.hr">
+        <div class="row"><button type="submit">Spremi postavke</button></div>
+      </form>
+      <h3>Cjenik</h3>
+      <p id="cjenik-stanje" class="meta"></p>
+      <div class="row"><button type="button" id="osvjezi-cjenik" class="secondary">Osvježi cjenik sada</button></div>
+      <h3>Promjena lozinke</h3>
+      <form id="lozinka-forma">
+        <label for="stara-lozinka">Trenutna lozinka</label>
+        <input id="stara-lozinka" type="password" autocomplete="current-password" required>
+        <label for="nova-lozinka">Nova lozinka <span class="meta">(barem 8 znakova)</span></label>
+        <input id="nova-lozinka" type="password" autocomplete="new-password" required minlength="8">
+        <div class="row"><button type="submit" class="secondary">Promijeni lozinku</button></div>
+      </form>
+      <p id="postavke-poruka" class="meta"></p>
+    </section>
+
     <section id="predmet-bar" class="card">
       <div class="row center">
         <label for="predmet">Predmet</label>
@@ -20,6 +53,11 @@
         <button type="button" id="novi-predmet" class="secondary">Novi predmet</button>
         <button type="button" id="izvoz" class="secondary" hidden>Izvezi odabrane u Word</button>
       </div>
+      <form id="novi-predmet-forma" class="row center" hidden>
+        <input id="novi-predmet-naziv" placeholder="Naziv predmeta (npr. K-123/2026 – obrana)" size="40" required>
+        <button type="submit">Otvori</button>
+        <button type="button" id="novi-predmet-odustani" class="secondary">Odustani</button>
+      </form>
       <p id="predmet-info" class="meta"></p>
       <details id="pretrage" hidden><summary>Spremljene pretrage</summary><ul id="pretrage-lista"></ul></details>
     </section>

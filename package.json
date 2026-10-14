@@ -4,6 +4,10 @@
   "description": "Preglednik sudske prakse hrvatskih sudova s AI analizom (odluke.sudovi.hr)",
   "scripts": {
     "start": "node src/server.js",
+    "app": "electron .",
+    "postavi-prijavu": "node scripts/postavi-prijavu.js",
+    "predist": "node scripts/postavi-prijavu.js --provjeri",
+    "dist": "electron-builder --win nsis",
     "test": "node --test",
     "probe": "node scripts/probe-odluke.js"
   },
@@ -26,5 +30,35 @@
   "type": "module",
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "productName": "Praksa",
+  "main": "electron/main.js",
+  "author": "Hrvoje Jelić",
+  "build": {
+    "appId": "hr.praksa.preglednik",
+    "productName": "Praksa",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Praksa – sudska praksa"
+    }
   }
 }

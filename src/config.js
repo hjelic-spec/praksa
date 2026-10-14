@@ -3,6 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Podaci (predmeti, prijava, postavke, međuspremnik stranica). U Windows aplikaciji to je
+// korisnikov profil (%APPDATA%\Praksa), jer se u mapu programa ne smije pisati.
+const dataDir = process.env.PRAKSA_DATA_DIR ?? path.join(root, 'data');
 
 // Varijable iz .env (npr. ANTHROPIC_API_KEY); one već postavljene u okruženju imaju prednost.
 try {
@@ -26,10 +29,18 @@ export const config = {
   analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 3),
   minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 1500),
   userAgent: process.env.PRAKSA_USER_AGENT ?? 'praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)',
-  cacheDir: path.join(root, 'data', 'cache'),
-  corpusDir: path.join(root, 'data', 'corpus'),
+  dataDir,
+  cacheDir: path.join(dataDir, 'cache'),
+  corpusDir: path.join(dataDir, 'corpus'),
   // Spremljeni predmeti (pretrage, bilješke); sadrže podatke o predmetima ureda i nisu u gitu.
-  predmetiDir: process.env.PRAKSA_PREDMETI_DIR ?? path.join(root, 'data', 'predmeti'),
+  predmetiDir: process.env.PRAKSA_PREDMETI_DIR ?? path.join(dataDir, 'predmeti'),
+  // Korisnik i lozinka (scrypt) te postavke (API ključ…); nisu u gitu.
+  authFile: path.join(dataDir, 'prijava.json'),
+  // Pristupni podaci ugrađeni u instalaciju (nije u gitu; izrađuje `npm run postavi-prijavu`).
+  bundledAuthFile: process.env.PRAKSA_BUNDLED_AUTH ?? path.join(root, 'src', 'prijava-ugradena.json'),
+  settingsFile: path.join(dataDir, 'postavke.json'),
+  // Zadnji provjereni cjenik modela (automatski se osvježava, vidi src/pricing.js).
+  pricingFile: path.join(dataDir, 'cjenik.json'),
   // Izvori: "odluke" (odluke.sudovi.hr), "local" (data/corpus). Npr. PRAKSA_SOURCES=local
   sources: (process.env.PRAKSA_SOURCES ?? 'odluke,local').split(',').map((s) => s.trim()).filter(Boolean),
   get verifyEuViaSparql() { return process.env.PRAKSA_VERIFY_EU !== '0'; },

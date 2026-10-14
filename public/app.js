@@ -18,10 +18,13 @@ async function api(url, opts = {}) {
     headers: opts.body ? { 'Content-Type': 'application/json' } : undefined,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
+  if (res.status === 401) { location.href = '/prijava.html'; throw new Error('Potrebna je prijava.'); }
   const data = await res.json();
   if (!res.ok) throw new Error(data.greska ?? res.statusText);
   return data;
 }
+
+const usd = (n) => `$${(n ?? 0).toFixed(n >= 1 ? 2 : 3)}`;
 
 // ---------- predmeti ----------
 
@@ -29,7 +32,7 @@ async function loadPredmeti(selectId) {
   const list = await api('/api/predmeti');
   const sel = $('#predmet');
   sel.innerHTML = '<option value="">— bez predmeta (pretraga se ne sprema) —</option>' +
-    list.map((p) => `<option value="${esc(p.id)}">${esc(p.naziv)} (${p.brojPretraga})</option>`).join('');
+    list.map((p) => `<option value="${esc(p.id)}">${esc(p.naziv)} (${p.brojPretraga} pretr., ${usd(p.trosakUSD)})</option>`).join('');
   const id = selectId ?? localGet('predmet');
   if (id && list.some((p) => p.id === id)) sel.value = id;
   await selectPredmet(sel.value);
@@ -54,7 +57,7 @@ function renderPredmet() {
   $('#pretrage').hidden = !p || !p.pretrage.length;
   $('#izvoz').hidden = !p;
   $('#predmet-info').textContent = p
-    ? `Pretrage i bilješke spremaju se lokalno u data/predmeti. Spremljenih pretraga: ${p.pretrage.length}.`
+    ? `Pretrage i bilješke spremaju se lokalno. Spremljenih pretraga: ${p.pretrage.length}. Ukupni procijenjeni trošak predmeta: ${usd(p.trosakUSD)}.`
     : 'Odaberite ili otvorite predmet kako bi se pretrage, bilješke i odabir odluka spremili.';
   if (!p) return;
   const n = selectedCount();
@@ -63,19 +66,80 @@ function renderPredmet() {
   $('#pretrage-lista').innerHTML = p.pretrage.map((s) => `<li>
     <a href="#" data-pretraga="${esc(s.id)}">${esc(new Date(s.datum).toLocaleString('hr-HR'))}</a>
     – ${esc(s.opis.slice(0, 110))}${s.opis.length > 110 ? '…' : ''}
-    <span class="meta">(${s.rezultat?.odluke?.length ?? 0} odluka)</span>
+    <span class="meta">(${s.rezultat?.odluke?.length ?? 0} odluka${s.rezultat?.trosak ? `, ${usd(s.rezultat.trosak.usd)}` : ''})</span>
     <button type="button" class="link" data-obrisi="${esc(s.id)}" title="Obriši pretragu">obriši</button></li>`).join('');
 }
 
 $('#predmet').addEventListener('change', (e) => selectPredmet(e.target.value).catch(showError));
 
-$('#novi-predmet').addEventListener('click', async () => {
-  const naziv = prompt('Naziv predmeta (npr. K-123/2026 – obrana):');
-  if (!naziv?.trim()) return;
+// Unos naziva u obrascu (window.prompt nije dostupan u Windows aplikaciji).
+$('#novi-predmet').addEventListener('click', () => {
+  $('#novi-predmet-forma').hidden = false;
+  $('#novi-predmet-naziv').focus();
+});
+$('#novi-predmet-odustani').addEventListener('click', () => { $('#novi-predmet-forma').hidden = true; });
+$('#novi-predmet-forma').addEventListener('submit', async (e) => {
+  e.preventDefault();
   try {
-    const p = await api('/api/predmeti', { method: 'POST', body: { naziv } });
+    const p = await api('/api/predmeti', { method: 'POST', body: { naziv: $('#novi-predmet-naziv').value } });
+    $('#novi-predmet-naziv').value = '';
+    $('#novi-predmet-forma').hidden = true;
     await loadPredmeti(p.id);
-  } catch (e) { showError(e); }
+  } catch (err) { showError(err); }
+});
+
+// ---------- postavke i odjava ----------
+
+async function loadPostavke() {
+  const s = await api('/api/postavke');
+  $('#kljuc-stanje').textContent = s.imaKljuc ? `Ključ je postavljen (završava s …${s.kljucZavrsava}).` : 'Ključ NIJE postavljen – pretraga neće raditi.';
+  $('#max-odluka').value = s.maxOdluka;
+  $('#kontakt').value = s.kontakt;
+  renderCjenik(await api('/api/cjenik'));
+  return s;
+}
+
+function renderCjenik(c) {
+  const p = c.cijenaModela;
+  const kada = c.dohvaceno ? `osvježen ${new Date(c.dohvaceno).toLocaleString('hr-HR')} sa službene stranice Anthropica` : esc(c.izvor);
+  $('#cjenik-stanje').innerHTML = `Cjenik ${kada}; osvježava se automatski jednom dnevno.`
+    + (p ? `<br>${esc(c.model)}: ulaz $${p.ulaz}, izlaz $${p.izlaz}, čitanje iz međuspremnika $${p.citanje} po milijunu tokena.` : '')
+    + (c.greska ? `<br><span class="greska">${esc(c.greska)}</span>` : '');
+}
+
+$('#osvjezi-cjenik').addEventListener('click', async () => {
+  $('#osvjezi-cjenik').disabled = true;
+  try { renderCjenik(await api('/api/cjenik/osvjezi', { method: 'POST' })); } catch (err) { showError(err); }
+  $('#osvjezi-cjenik').disabled = false;
+});
+
+$('#otvori-postavke').addEventListener('click', async () => {
+  const sec = $('#postavke');
+  sec.hidden = !sec.hidden;
+  if (!sec.hidden) await loadPostavke().catch(showError);
+});
+
+$('#postavke-forma').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/postavke', { method: 'POST', body: { apiKey: $('#api-kljuc').value.trim(), maxOdluka: $('#max-odluka').value, kontakt: $('#kontakt').value } });
+    $('#api-kljuc').value = '';
+    await loadPostavke();
+    $('#postavke-poruka').textContent = 'Postavke su spremljene.';
+  } catch (err) { $('#postavke-poruka').textContent = `Greška: ${err.message}`; }
+});
+
+$('#lozinka-forma').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/auth/lozinka', { method: 'POST', body: { stara: $('#stara-lozinka').value, nova: $('#nova-lozinka').value } });
+    location.href = '/prijava.html';
+  } catch (err) { $('#postavke-poruka').textContent = `Greška: ${err.message}`; }
+});
+
+$('#odjava').addEventListener('click', async () => {
+  await api('/api/auth/odjava', { method: 'POST' }).catch(() => {});
+  location.href = '/prijava.html';
 });
 
 $('#pretrage-lista').addEventListener('click', async (e) => {
@@ -299,6 +363,8 @@ function render(r, saved) {
   if (s) {
     $('#sinteza').innerHTML = `<div class="card"><h2>Sinteza prakse</h2>
       ${saved ? `<p class="meta">Spremljena pretraga od ${esc(new Date(saved.datum).toLocaleString('hr-HR'))}</p>` : ''}
+      ${r.trosak ? `<p class="meta trosak">Procijenjeni trošak pretrage: <strong>${usd(r.trosak.usd)}</strong>
+        (${r.trosak.pozivi} poziva modela, ${r.trosak.ulazniTokeni.toLocaleString('hr-HR')} ulaznih i ${r.trosak.izlazniTokeni.toLocaleString('hr-HR')} izlaznih tokena)</p>` : ''}
       <p>${esc(s.pregled)}</p>
       <dl>
       ${s.argumenti_u_prilog ? `<dt>Argumenti u prilog našem stajalištu</dt><dd>${esc(s.argumenti_u_prilog)}</dd>` : ''}
@@ -327,6 +393,12 @@ function render(r, saved) {
 
 async function init() {
   const info = await api('/api/info');
+  $('#korisnik').textContent = `Prijavljeni: ${info.korisnik}`;
+  if (!info.imaKljuc) {
+    $('#postavke').hidden = false;
+    await loadPostavke();
+    $('#postavke-poruka').textContent = 'Upišite Anthropic API ključ kako bi pretraga radila.';
+  }
   $('#filteri').innerHTML = info.filteri.map((f) =>
     `<label>${esc(FILTER_LABELS[f] ?? f)} <input name="${esc(f)}" type="date"></label>`).join('');
   await loadPredmeti();

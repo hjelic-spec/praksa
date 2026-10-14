@@ -88,3 +88,15 @@ test('stajalište ide u razradu, analizu i sintezu; težina se računa', async (
   assert.equal(r.stajaliste, 'prijevoznik odgovara');
   assert.ok(r.odluke.every((d) => 'tezina' in d));
 });
+
+test('trošak se zbraja iz svih poziva modela', async () => {
+  const usage = { input_tokens: 1000, output_tokens: 100 };
+  const l = {
+    async planQuery(o, s, track) { track('claude-opus-5-5', usage); return llm.planQuery(); },
+    async assessDecision(o, p, d, t, s, track) { track('claude-opus-5-5', usage); return llm.assessDecision(o, p, d, t); },
+    async synthesize(o, items, s, track) { track('claude-opus-5-5', usage); return llm.synthesize(o, items); },
+  };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: source } } });
+  assert.equal(r.trosak.pozivi, 1 + 4 + 1);
+  assert.equal(r.trosak.usd, Math.round(6 * (1000 * 4 + 100 * 20) / 1e6 * 10000) / 10000);
+});

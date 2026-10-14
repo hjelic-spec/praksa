@@ -6,6 +6,7 @@
   :root { --bg: #161616; --fg: #ebebeb; --muted: #a0a0a0; --card: #202020; --line: #3a3a3a; --accent: #7fb0f0; --ok: #6fcf8a; --warn: #e2b04a; --bad: #f08080; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
 header, main, footer { max-width: 960px; margin: 0 auto; padding: 16px; }
 h1 { margin: 8px 0 0; font-size: 1.6rem; }
@@ -44,3 +45,11 @@ h3.group { margin: 24px 0 0; padding-bottom: 4px; border-bottom: 1px solid var(-
 .biljeska { display: grid; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .biljeska textarea { width: 100%; }
 @media (max-width: 600px) { #dodatni { width: 100%; } }
+main.narrow { max-width: 440px; }
+main.narrow form { display: grid; gap: 8px; }
+main.narrow input { width: 100%; }
+.greska { color: var(--bad); }
+.header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.trosak { font-variant-numeric: tabular-nums; }
+#postavke form { display: grid; gap: 8px; max-width: 480px; }
+#novi-predmet-forma { margin-top: 8px; }
