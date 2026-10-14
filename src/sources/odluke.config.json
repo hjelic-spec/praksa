@@ -1,0 +1,23 @@
+{
+  "_napomena": "Konfiguracija za odluke.sudovi.hr. Struktura HTML-a te stranice NIJE provjerena iz razvojnog okruženja (pristup je bio blokiran). Pokrenite `npm run probe` na računalu s pristupom stranici i prema ispisu po potrebi popunite polja s vrijednošću null.",
+  "baseUrl": "https://odluke.sudovi.hr",
+  "searchPagePath": "/Document/AdvancedSearch",
+  "search": {
+    "mode": "auto-form",
+    "template": null,
+    "queryField": null,
+    "extraParams": {},
+    "filterFields": {
+      "datumOd": null,
+      "datumDo": null
+    }
+  },
+  "results": {
+    "linkPattern": null,
+    "nextPageSelector": null,
+    "maxPages": 2
+  },
+  "decision": {
+    "textSelector": null
+  }
+}

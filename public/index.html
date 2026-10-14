@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preglednik sudske prakse</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Preglednik sudske prakse</h1>
+    <p class="sub">Opišite pojam, primjer ili događaj. Alat pretražuje odluke hrvatskih sudova, analizira ih i povezuje s pravom EU.</p>
+  </header>
+
+  <main>
+    <form id="upit">
+      <label for="opis">Opis slučaja</label>
+      <textarea id="opis" rows="6" required minlength="10"
+        placeholder="Npr. Putnik je kupio let koji je otkazan dan prije polaska, a zračni prijevoznik odbija isplatiti odštetu tvrdeći da je riječ o izvanrednim okolnostima (štrajk vlastitog osoblja)."></textarea>
+      <div id="filteri" class="row"></div>
+      <button type="submit">Pretraži praksu</button>
+    </form>
+
+    <section id="status" hidden></section>
+    <section id="sinteza" hidden></section>
+    <section id="odluke"></section>
+    <section id="upozorenja" hidden></section>
+  </main>
+
+  <footer>
+    Izvori: <a href="https://odluke.sudovi.hr/" rel="noopener">odluke.sudovi.hr</a>, EUR-Lex, CURIA.
+    Analize izrađuje jezični model i mogu sadržavati pogreške – uvijek provjerite izvornu odluku. Ovo nije pravni savjet.
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
