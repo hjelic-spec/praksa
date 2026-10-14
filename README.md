@@ -1,17 +1,31 @@
 # Preglednik sudske prakse
 
-Lokalna web-aplikacija za pretraživanje odluka hrvatskih sudova s [odluke.sudovi.hr](https://odluke.sudovi.hr/).
-Upit nije samo pojam nego **opis primjera ili događaja**. Aplikacija:
+Lokalna web-aplikacija za odvjetnički ured: traženje sudske prakse na [odluke.sudovi.hr](https://odluke.sudovi.hr/)
+za potrebe obrane u sudskim postupcima. Upit nije samo pojam nego **opis slučaja**, uz neobavezno **stajalište obrane**. Aplikacija:
 
-1. **razradi opis** (Claude): pravna pitanja, ključne činjenice i 3–8 upita za tražilicu sročenih pravnom terminologijom;
+0. **anonimizira** opis i stajalište lokalno (imena, OIB, adrese, telefoni, e-pošta, registracije, tvrtke) i prije slanja
+   prikaže točno što odlazi modelu – ništa se ne šalje bez potvrde;
+1. **razradi opis** (Claude): pravna pitanja, ključne činjenice i 3–8 upita za tražilicu (i za odluke u prilog i protiv stajališta);
 2. **pretraži** odluke.sudovi.hr (i po želji lokalnu zbirku u `data/corpus`);
 3. **dohvati tekst** svake pronađene odluke;
 4. **analizira svaku odluku** (Claude): podudara li se s opisanim primjerom (da / djelomično / ne), relevantnost 0–100,
-   činjenice, ishod, pravno shvaćanje, zašto je odluka važna, doslovni citat;
+   **ide li u prilog stajalištu ili protiv njega**, kako je iskoristiti odnosno kako joj se suprotstaviti, je li još primjenjiva,
+   činjenice, ishod, pravno shvaćanje, doslovni citat; uz to se iz metapodataka računa **težina** (razina suda, pravomoćnost, starost);
 5. **provjeri** ono što se može provjeriti bez modela (vidi dolje);
 6. **poveže predmete**: odluke koje se međusobno citiraju ili citiraju iste predmete;
 7. **poveže s pravom EU**: direktive, uredbe, predmeti Suda EU, Povelja i Ugovori navedeni u odluci;
-8. izradi **sintezu prakse**: prevladavajuće stajalište, razlike u praksi, preporuke za daljnje istraživanje.
+8. izradi **sintezu prakse**: argumenti u prilog, argumenti protiv i odgovor na njih, prevladavajuće stajalište, razlike u praksi,
+   preporuke za daljnje istraživanje;
+9. **spremi pretragu u predmet** (`data/predmeti`, izvan gita) zajedno s bilješkama uz odluke, a odabrane odluke
+   **izveze u Word** s citatom za podnesak (sud, poslovni broj, datum, ECLI) i doslovnim citatom.
+
+## Povjerljivost
+
+- Anonimizacija je heuristička i može nešto propustiti; zato se uvijek prikazuje tekst koji će biti poslan, a pojmovi se mogu dodati ručno.
+  Imena se prepoznaju po velikom početnom slovu, pa se predlažu i nazivi mjesta – isključite što ne treba zamijeniti. Datumi se predlažu, ali nisu uključeni (često su bitni za rokove i zastaru).
+- Modelu (Anthropic API) šalju se samo anonimizirani opis i stajalište te tekstovi javno objavljenih odluka. Prema odluke.sudovi.hr idu samo pravni upiti.
+- U predmetu se sprema samo poslani (anonimizirani) tekst, rezultati i bilješke. Bilješke ostaju lokalno i ne šalju se nikamo.
+- Provjerite uvjete obrade podataka za Anthropic API koji vrijede za vaš račun prije upotrebe na stvarnim predmetima.
 
 ## Što je provjereno, a što nije
 
@@ -22,6 +36,8 @@ Upit nije samo pojam nego **opis primjera ili događaja**. Aplikacija:
 | Direktive/uredbe → CELEX | regularni izraz + pravila numeracije EU | iz teksta; postojanje se provjerava u CELLAR-u (SPARQL) |
 | Predmeti Suda EU (C-…/…) | regularni izraz | iz teksta, poveznica na CURIA |
 | „Moguće poveznice s pravom EU“ | prijedlog modela | **pretpostavka**, jasno označena u sučelju |
+| Razina suda, pravomoćnost, starost odluke | metapodaci s odluke.sudovi.hr | iz izvora |
+| Smjer (u prilog / protiv), „kako iskoristiti“, primjenjivost danas | model | procjena, treba provjeriti |
 | Ocjena relevantnosti, sažeci, sinteza | model | treba provjeriti u izvornoj odluci |
 
 Ovo nije pravni savjet.
@@ -86,9 +102,13 @@ Odluke spremljene kao `.txt`, `.md` ili `.html` u `data/corpus/` pretražuju se 
 ## Struktura
 
 ```
-src/server.js            HTTP poslužitelj i API (/api/info, /api/upit)
+src/server.js            HTTP poslužitelj i API (/api/upit, /api/anonimizacija, /api/predmeti…)
 src/pipeline.js          tijek obrade, provjere, povezivanje predmeta
 src/llm.js               pozivi Claude API-ja sa strukturiranim izlazom
+src/anonymize.js         lokalna anonimizacija opisa i stajališta
+src/authority.js         težina odluke: razina suda, pravomoćnost, starost
+src/store.js             spremanje predmeta u data/predmeti
+src/export.js            izvoz odabranih odluka u .docx
 src/extract.js           regex ekstrakcija: poslovni brojevi, ECLI, EU akti → CELEX, provjera citata
 src/eu.js                provjera CELEX-a u CELLAR SPARQL endpointu
 src/sources/odluke.js    adapter za odluke.sudovi.hr (+ odluke.config.json)

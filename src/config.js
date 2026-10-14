@@ -28,6 +28,8 @@ export const config = {
   userAgent: process.env.PRAKSA_USER_AGENT ?? 'praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)',
   cacheDir: path.join(root, 'data', 'cache'),
   corpusDir: path.join(root, 'data', 'corpus'),
+  // Spremljeni predmeti (pretrage, bilješke); sadrže podatke o predmetima ureda i nisu u gitu.
+  predmetiDir: process.env.PRAKSA_PREDMETI_DIR ?? path.join(root, 'data', 'predmeti'),
   // Izvori: "odluke" (odluke.sudovi.hr), "local" (data/corpus). Npr. PRAKSA_SOURCES=local
   sources: (process.env.PRAKSA_SOURCES ?? 'odluke,local').split(',').map((s) => s.trim()).filter(Boolean),
   get verifyEuViaSparql() { return process.env.PRAKSA_VERIFY_EU !== '0'; },

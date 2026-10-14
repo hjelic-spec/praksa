@@ -9,17 +9,50 @@
 <body>
   <header>
     <h1>Preglednik sudske prakse</h1>
-    <p class="sub">Opišite pojam, primjer ili događaj. Alat pretražuje odluke hrvatskih sudova, analizira ih i povezuje s pravom EU.</p>
+    <p class="sub">Opišite slučaj i stajalište obrane. Alat pretražuje odluke hrvatskih sudova, razvrstava ih na one u prilog i protiv, i povezuje ih s pravom EU.</p>
   </header>
 
   <main>
+    <section id="predmet-bar" class="card">
+      <div class="row center">
+        <label for="predmet">Predmet</label>
+        <select id="predmet"></select>
+        <button type="button" id="novi-predmet" class="secondary">Novi predmet</button>
+        <button type="button" id="izvoz" class="secondary" hidden>Izvezi odabrane u Word</button>
+      </div>
+      <p id="predmet-info" class="meta"></p>
+      <details id="pretrage" hidden><summary>Spremljene pretrage</summary><ul id="pretrage-lista"></ul></details>
+    </section>
+
     <form id="upit">
       <label for="opis">Opis slučaja</label>
       <textarea id="opis" rows="6" required minlength="10"
-        placeholder="Npr. Putnik je kupio let koji je otkazan dan prije polaska, a zračni prijevoznik odbija isplatiti odštetu tvrdeći da je riječ o izvanrednim okolnostima (štrajk vlastitog osoblja)."></textarea>
+        placeholder="Npr. Policija je bez naloga pretražila stan okrivljenika uz pristanak njegove majke koja ondje ne živi, i pronašla opojnu drogu."></textarea>
+      <label for="stajaliste">Naše stajalište / teza obrane <span class="meta">(neobavezno)</span></label>
+      <textarea id="stajaliste" rows="3"
+        placeholder="Npr. Pretraga je nezakonita jer pristanak nije dala osoba koja koristi stan, pa su pribavljeni dokazi nezakoniti (čl. 10. ZKP)."></textarea>
       <div id="filteri" class="row"></div>
-      <button type="submit">Pretraži praksu</button>
+      <p class="meta">Prije slanja prikazat će se pregled anonimizacije: osobni podaci zamjenjuju se oznakama i ništa ne odlazi van bez vaše potvrde.</p>
+      <button type="submit">Pregledaj prije slanja</button>
     </form>
+
+    <section id="pregled" class="card" hidden>
+      <h2>Pregled prije slanja</h2>
+      <p>Ovaj tekst bit će poslan Claude API-ju (Anthropic). Provjerite da ne sadrži podatke po kojima se klijent ili druge osobe mogu prepoznati.
+        Prepoznavanje je automatsko i može nešto propustiti – dodajte pojmove ručno.</p>
+      <ul id="stavke" class="stavke"></ul>
+      <div class="row center">
+        <input id="dodatni" placeholder="Dodaj pojam za zamjenu (npr. ime, mjesto)" size="36">
+        <button type="button" id="dodaj" class="secondary">Dodaj</button>
+      </div>
+      <h3>Opis koji se šalje</h3>
+      <pre id="anon-opis"></pre>
+      <div id="anon-stajaliste-wrap"><h3>Stajalište koje se šalje</h3><pre id="anon-stajaliste"></pre></div>
+      <div class="row">
+        <button type="button" id="posalji">Pošalji i pretraži</button>
+        <button type="button" id="natrag" class="secondary">Natrag na uređivanje</button>
+      </div>
+    </section>
 
     <section id="status" hidden></section>
     <section id="sinteza" hidden></section>
