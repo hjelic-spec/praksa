@@ -25,11 +25,27 @@ export function normalizeWs(s) {
 export function extractCaseNumbers(text) {
   const out = new Set();
   for (const m of normalizeWs(text).matchAll(CASE_NO_RE)) {
-    const v = m[1];
+    let v = m[1];
+    // Dvodijelne oznake s razmakom ("Gž R-568/2021", "Us I-45/2020", "Gž Ob-3/2020") imaju
+    // kratak prvi dio i kratak drugi dio. Ako je prvi dio dulji (≥ 4 slova) ili je drugi dio
+    // riječ s velikim početnim slovom od ≥ 3 slova, prvi dio je vjerojatno obična riječ
+    // ("Vidi Rev-100/20", "Sud Rev 5/2020") pa se odbacuje. Heuristika, nije potpuna.
+    const two = v.match(/^(\S+) (\S+?)([- ]\d.*)$/u);
+    if (two && (two[1].length >= 4 || new RegExp(`^[${UPPER}][${LOWER}]{2,}$`).test(two[2]))) v = two[2] + two[3];
     if (/^[CT]-\d{1,4}\/\d{2}$/.test(v)) continue; // to je predmet Suda EU, ne hrvatski
     out.add(v);
   }
   return [...out];
+}
+
+// Ključ za usporedbu poslovnih brojeva neovisno o zapisu: "Rev 1234/19-2", "Rev-1234/2019"
+// i "Rev-1234/2019-3" daju isti ključ (isti predmet; završni "-N" je redni broj
+// pismena u spisu, a godina se piše s dvije ili četiri znamenke).
+export function caseKey(caseNo) {
+  const m = normalizeWs(caseNo).match(/^(.*?)(\d{1,6})\/(\d{2,4})(?:-\d{1,3})?$/);
+  if (!m) return normalizeWs(caseNo).toLowerCase();
+  const prefix = m[1].replace(/[\s-]+/g, '').toLowerCase();
+  return `${prefix}${Number(m[2])}/${fullYear(m[3])}`;
 }
 
 export function extractEcli(text) {

@@ -1,7 +1,7 @@
 // Izvor: javna tražilica odluka sudova RH (https://odluke.sudovi.hr).
 //
-// VAŽNO: nazivi polja obrasca, oblik URL-ova rezultata i struktura stranice odluke
-// nisu provjereni iz okruženja u kojem je ovaj kod napisan. Zato adapter:
+// Struktura stranice provjerena je `npm run probe` (14.10.2026.) i upisana u
+// odluke.config.json. Ako se stranica promijeni, adapter se može vratiti na općenite načine:
 //   1) u načinu "auto-form" sam pročita obrazac s AdvancedSearch stranice (uključujući
 //      skrivena polja poput anti-forgery tokena) i upiše upit u tekstualno polje;
 //   2) rezultate prepoznaje heuristikom ako results.linkPattern nije zadan;
@@ -67,12 +67,29 @@ function isResultLink(href, searchUrl) {
   }
 }
 
+// Rezultati pretrage na odluke.sudovi.hr vode na /Document/View?id=<GUID>, često s dodanim
+// "&q=<upit>" (vidljivo u javno indeksiranim poveznicama). Bez uklanjanja tog parametra ista
+// bi odluka pronađena različitim upitima bila dohvaćena i analizirana više puta.
+export function canonicalDecisionUrl(href) {
+  try {
+    const u = new URL(href);
+    const id = u.searchParams.get('id');
+    if (/\/Document\/View$/i.test(u.pathname) && id) return `${u.origin}${u.pathname}?id=${encodeURIComponent(id)}`;
+    u.searchParams.delete('q');
+    return u.toString();
+  } catch {
+    return href;
+  }
+}
+
 export function parseResults(html, pageUrl) {
   const $ = cheerio.load(html);
   const seen = new Map();
   $('a[href]').each((_, a) => {
-    const href = abs($(a).attr('href'), pageUrl);
-    if (!isResultLink(href, pageUrl) || seen.has(href)) return;
+    const raw = abs($(a).attr('href'), pageUrl);
+    if (!isResultLink(raw, pageUrl)) return;
+    const href = canonicalDecisionUrl(raw);
+    if (seen.has(href)) return;
     const row = $(a).closest('tr, li, article, .row, div');
     seen.set(href, {
       url: href,
@@ -92,12 +109,19 @@ export function supportedFilters() {
   return Object.keys(f).filter((k) => f[k]);
 }
 
+// Sučelje šalje datume kao YYYY-MM-DD (<input type="date">), a tražilica ih očekuje u
+// obliku D.M.YYYY. (format daterangepickera na stranici).
+export function siteDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? `${Number(m[3])}.${Number(m[2])}.${m[1]}.` : value;
+}
+
 export async function firstPage(query, filters) {
   const c = cfg();
   const searchPage = c.baseUrl + c.searchPagePath;
   const params = { ...c.search.extraParams };
   for (const [k, field] of Object.entries(c.search.filterFields)) {
-    if (field && filters?.[k]) params[field] = filters[k];
+    if (field && filters?.[k]) params[field] = siteDate(filters[k]);
   }
 
   if (c.search.mode === 'template') {
@@ -151,18 +175,29 @@ export function metadataFromText(text) {
   };
 }
 
+// Metapodaci s ploče odluke (.metadata-item[data-metadata-type]); pouzdaniji od teksta,
+// a ECLI se često nalazi samo ondje.
+export function metadataFromHtml(html) {
+  const $ = cheerio.load(html);
+  const get = (type) => normalizeWs($(`.metadata-item[data-metadata-type="${type}"] .metadata-content`).first().text()) || null;
+  return { poslovniBroj: get('decision-number'), ecli: get('ecli-number'), sud: get('court') };
+}
+
 export function decisionTextFromHtml(html) {
   const $ = cheerio.load(html);
   const sel = cfg().decision.textSelector;
-  if (sel && $(sel).length) return normalizeWs($(sel).text());
-  $('script, style, noscript, nav, header, footer, form, iframe').remove();
+  const $root = sel && $(sel).length ? $(sel).first() : $('body');
+  $root.find('script, style, noscript, nav, header, footer, form, iframe').remove();
   // Zadrži prijelome odlomaka radi čitljivosti citata.
-  $('p, br, div, li, tr, h1, h2, h3, h4').each((_, el) => { $(el).append('\n'); });
-  return $('body').text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
+  $root.find('p, br, div, li, tr, h1, h2, h3, h4').each((_, el) => { $(el).append('\n'); });
+  return $root.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
 }
 
 export async function fetchDecision(ref) {
   const html = await fetchText(ref.url);
   const tekst = decisionTextFromHtml(html);
-  return { ...ref, tekst, meta: metadataFromText(tekst) };
+  const fromText = metadataFromText(tekst);
+  const fromHtml = metadataFromHtml(html);
+  const meta = Object.fromEntries(Object.keys(fromText).map((k) => [k, fromHtml[k] ?? fromText[k]]));
+  return { ...ref, tekst, meta };
 }

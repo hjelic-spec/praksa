@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  extractCaseNumbers, extractEcli, extractEuActs, extractCjeuCases, extractEuReferences, quoteInText,
+  caseKey, extractCaseNumbers, extractEcli, extractEuActs, extractCjeuCases, extractEuReferences, quoteInText,
 } from '../src/extract.js';
 
 test('poslovni brojevi hrvatskih sudova', () => {
@@ -42,4 +42,17 @@ test('provjera citata', () => {
   assert.equal(quoteInText('ugovorna odredba o valutnoj klauzuli ništetna', text), true);
   assert.equal(quoteInText('ugovorna odredba je valjana i jasna', text), false);
   assert.equal(quoteInText('kratko', text), false);
+});
+
+test('ključ poslovnog broja neovisan o zapisu', () => {
+  assert.equal(caseKey('Rev 1234/2019-2'), caseKey('Rev-1234/19'));
+  assert.equal(caseKey('Gž R-568/2021-2'), caseKey('Gž R 568/2021'));
+  assert.equal(caseKey('U-III-1234/2018'), caseKey('U-III-1234/18'));
+  assert.notEqual(caseKey('Rev 1234/2019'), caseKey('Revr 1234/2019'));
+  assert.notEqual(caseKey('Gž-55/2019'), caseKey('Gž-55/2018'));
+});
+
+test('obična riječ ispred poslovnog broja nije dio oznake', () => {
+  const got = extractCaseNumbers('Vidi Rev-100/20. Sud Rev 5/2020. Isto Gž-7/2019 te Gž R-568/2021-2 i Gž Ob-3/2020.');
+  assert.deepEqual(got, ['Rev-100/20', 'Rev 5/2020', 'Gž-7/2019', 'Gž R-568/2021-2', 'Gž Ob-3/2020']);
 });

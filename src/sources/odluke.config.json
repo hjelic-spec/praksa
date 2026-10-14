@@ -1,23 +1,23 @@
 {
-  "_napomena": "Konfiguracija za odluke.sudovi.hr. Struktura HTML-a te stranice NIJE provjerena iz razvojnog okruženja (pristup je bio blokiran). Pokrenite `npm run probe` na računalu s pristupom stranici i prema ispisu po potrebi popunite polja s vrijednošću null.",
+  "_napomena": "Konfiguracija za odluke.sudovi.hr, provjerena `npm run probe` 14.10.2026. Pretraga je GET /Document/DisplayList s parametrima koje gradi JavaScript tražilice (q, dd_from, dd_to u obliku D.M.YYYY.); paginacija je ?page=N; tekst odluke je u .decision-text, a metapodaci u .metadata-item[data-metadata-type].",
   "baseUrl": "https://odluke.sudovi.hr",
   "searchPagePath": "/Document/AdvancedSearch",
   "search": {
-    "mode": "auto-form",
-    "template": null,
-    "queryField": null,
+    "mode": "template",
+    "template": "/Document/DisplayList?q={q}",
+    "queryField": "q",
     "extraParams": {},
     "filterFields": {
-      "datumOd": null,
-      "datumDo": null
+      "datumOd": "dd_from",
+      "datumDo": "dd_to"
     }
   },
   "results": {
-    "linkPattern": null,
-    "nextPageSelector": null,
+    "linkPattern": "/Document/View\\?id=[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}",
+    "nextPageSelector": "ul.pagination li.page-item:not(.disabled) > a.page-link[aria-label=Next]",
     "maxPages": 2
   },
   "decision": {
-    "textSelector": null
+    "textSelector": ".decision-text"
   }
 }
