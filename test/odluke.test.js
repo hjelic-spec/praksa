@@ -88,3 +88,16 @@ test('kanonski URL odluke', () => {
   );
   assert.equal(canonicalDecisionUrl('https://primjer.test/Document/Other?x=1&q=a'), 'https://primjer.test/Document/Other?x=1');
 });
+
+test('kartica rezultata: broj, sud, datum, pravomoćnost i isječak', () => {
+  const html = `<div id="search-results"><a class="search-result" href="/Document/View?id=${ID1}&amp;q=x"><div class="search-result-content">
+    <div class="result-header"><div class="result-decision-info"><div class="decision-number">IV Kr-83/2025-3</div>
+    <div class="decision-court"><img src="a.svg"> Visoki kazneni sud Republike Hrvatske</div><div class="decision-date"><img src="b.svg"> 18.9.2025.</div></div>
+    <div class="result-chips"><div class="final-decision">Pravomoćno rješenje</div></div></div>
+    <div class="result-snippet"><span class="snippet-highlight">oštećenika</span> kao tužitelja ... nadležnosti</div></div></a></div>`;
+  const [r] = parseResults(html, SEARCH_PAGE).results;
+  assert.deepEqual({ ...r, isjecak: r.isjecak.slice(0, 22) }, {
+    url: `https://primjer.test/Document/View?id=${ID1}`, naslov: 'IV Kr-83/2025-3', sud: 'Visoki kazneni sud Republike Hrvatske',
+    datum: '18.9.2025.', pravomocnost: 'Pravomoćno rješenje', isjecak: 'oštećenika kao tužitel',
+  });
+});

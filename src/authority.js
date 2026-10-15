@@ -30,3 +30,14 @@ export function weigh(meta = {}, now = new Date()) {
     stara: starost !== null && starost > OLD_YEARS,
   };
 }
+
+// Navod odluke za podnesak. "Presuda Vrhovnog suda…" zahtijeva padež naziva suda, pa se koristi
+// neutralan zapis: "Vrhovni sud Republike Hrvatske, Rev-49/2024-2 od 5.6.2024. (presuda), ECLI:…"
+export function citationLine(d) {
+  const m = d.meta ?? {};
+  const parts = [m.sud, [m.poslovniBroj ?? d.naslov, m.datum && `od ${m.datum}`].filter(Boolean).join(' ')].filter(Boolean);
+  let s = parts.join(', ');
+  if (m.vrsta) s += ` (${m.vrsta.toLowerCase()})`;
+  if (m.ecli) s += `, ${m.ecli}`;
+  return s;
+}

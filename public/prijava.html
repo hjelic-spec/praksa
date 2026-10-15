@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prijava – Sudska praksa</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="narrow">
+    <h1 class="logo">Sudska praksa</h1>
+
+    <form id="prijava" class="card" hidden>
+      <h2>Prijava</h2>
+      <label for="p-korisnik">E-pošta</label>
+      <input id="p-korisnik" type="text" autocomplete="username" required>
+      <label for="p-lozinka">Lozinka</label>
+      <input id="p-lozinka" type="password" autocomplete="current-password" required>
+      <button type="submit">Prijavi se</button>
+      <p class="meta">Nemate račun? <a href="#" id="na-registraciju">Zatražite pristup</a></p>
+    </form>
+
+    <form id="registracija" class="card" hidden>
+      <h2>Zahtjev za pristup</h2>
+      <p class="meta">Nakon slanja administrator mora odobriti račun; tek tada se možete prijaviti.</p>
+      <label for="r-ime">Ime i prezime</label>
+      <input id="r-ime" autocomplete="name" required>
+      <label for="r-email">E-pošta</label>
+      <input id="r-email" type="email" autocomplete="email" required>
+      <label for="r-lozinka">Lozinka <span class="meta">(barem 8 znakova)</span></label>
+      <input id="r-lozinka" type="password" autocomplete="new-password" required minlength="8">
+      <label for="r-lozinka2">Ponovite lozinku</label>
+      <input id="r-lozinka2" type="password" autocomplete="new-password" required minlength="8">
+      <button type="submit">Pošalji zahtjev</button>
+      <p class="meta">Već imate račun? <a href="#" id="na-prijavu">Prijava</a></p>
+    </form>
+
+    <form id="postavljanje" class="card" hidden>
+      <h2>Prvo pokretanje</h2>
+      <p class="meta">Postavite administratorski račun. Administrator odobrava ostale korisnike i upravlja postavkama.</p>
+      <label for="s-korisnik">E-pošta administratora</label>
+      <input id="s-korisnik" autocomplete="username" required minlength="3">
+      <label for="s-lozinka">Lozinka <span class="meta">(barem 8 znakova)</span></label>
+      <input id="s-lozinka" type="password" autocomplete="new-password" required minlength="8">
+      <label for="s-lozinka2">Ponovite lozinku</label>
+      <input id="s-lozinka2" type="password" autocomplete="new-password" required minlength="8">
+      <label for="s-kljuc">Anthropic API ključ <span class="meta">(počinje sa sk-ant-; može i kasnije u Postavkama)</span></label>
+      <input id="s-kljuc" type="password" autocomplete="off" placeholder="sk-ant-…">
+      <button type="submit">Spremi i uđi</button>
+    </form>
+
+    <p id="poruka" hidden></p>
+  </main>
+  <script src="prijava.js"></script>
+</body>
+</html>

@@ -3,66 +3,101 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Preglednik sudske prakse</title>
+  <title>Sudska praksa</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <header>
-    <h1>Preglednik sudske prakse</h1>
-    <p class="sub">Opišite slučaj i stajalište obrane. Alat pretražuje odluke hrvatskih sudova, razvrstava ih na one u prilog i protiv, i povezuje ih s pravom EU.</p>
+<body class="landing">
+  <header class="topbar">
+    <a href="/" class="brand">Sudska praksa</a>
+    <nav class="row center">
+      <button type="button" id="otvori-spremljeno" class="link-btn">Spremljeno <span id="broj-spremljenih" class="count"></span></button>
+      <button type="button" id="otvori-korisnike" class="link-btn" hidden>Korisnici <span id="broj-cekanje" class="count"></span></button>
+      <button type="button" id="otvori-postavke" class="link-btn">Postavke</button>
+      <button type="button" id="odjava" class="link-btn">Odjava</button>
+    </nav>
   </header>
 
   <main>
-    <section id="predmet-bar" class="card">
-      <div class="row center">
-        <label for="predmet">Predmet</label>
-        <select id="predmet"></select>
-        <button type="button" id="novi-predmet" class="secondary">Novi predmet</button>
-        <button type="button" id="izvoz" class="secondary" hidden>Izvezi odabrane u Word</button>
+    <section id="trazilica">
+      <h1 class="logo">Sudska praksa</h1>
+      <p class="sub">Opišite slučaj ili pravno pitanje – pronaći ćemo presedane hrvatskih sudova.</p>
+      <form id="upit" class="searchbox">
+        <textarea id="opis" rows="1" required minlength="10" aria-label="Opis traženja"
+          placeholder="Opišite što tražite…"></textarea>
+        <button type="submit" id="trazi">Traži</button>
+      </form>
+      <div id="primjeri" class="chips">
+        <button type="button" class="chip">Je li pretraga stana bez naloga uz pristanak osobe koja ondje ne živi zakonita i jesu li dokazi upotrebljivi?</button>
+        <button type="button" class="chip">Odgovara li grad ili vlasnik susjedne nekretnine za pad pješaka na zaleđenom nogostupu?</button>
+        <button type="button" class="chip">Je li štrajk vlastitog osoblja zračnog prijevoznika izvanredna okolnost za odštetu putniku?</button>
       </div>
-      <p id="predmet-info" class="meta"></p>
-      <details id="pretrage" hidden><summary>Spremljene pretrage</summary><ul id="pretrage-lista"></ul></details>
-    </section>
-
-    <form id="upit">
-      <label for="opis">Opis slučaja</label>
-      <textarea id="opis" rows="6" required minlength="10"
-        placeholder="Npr. Policija je bez naloga pretražila stan okrivljenika uz pristanak njegove majke koja ondje ne živi, i pronašla opojnu drogu."></textarea>
-      <label for="stajaliste">Naše stajalište / teza obrane <span class="meta">(neobavezno)</span></label>
-      <textarea id="stajaliste" rows="3"
-        placeholder="Npr. Pretraga je nezakonita jer pristanak nije dala osoba koja koristi stan, pa su pribavljeni dokazi nezakoniti (čl. 10. ZKP)."></textarea>
-      <div id="filteri" class="row"></div>
-      <p class="meta">Prije slanja prikazat će se pregled anonimizacije: osobni podaci zamjenjuju se oznakama i ništa ne odlazi van bez vaše potvrde.</p>
-      <button type="submit">Pregledaj prije slanja</button>
-    </form>
-
-    <section id="pregled" class="card" hidden>
-      <h2>Pregled prije slanja</h2>
-      <p>Ovaj tekst bit će poslan Claude API-ju (Anthropic). Provjerite da ne sadrži podatke po kojima se klijent ili druge osobe mogu prepoznati.
-        Prepoznavanje je automatsko i može nešto propustiti – dodajte pojmove ručno.</p>
-      <ul id="stavke" class="stavke"></ul>
-      <div class="row center">
-        <input id="dodatni" placeholder="Dodaj pojam za zamjenu (npr. ime, mjesto)" size="36">
-        <button type="button" id="dodaj" class="secondary">Dodaj</button>
-      </div>
-      <h3>Opis koji se šalje</h3>
-      <pre id="anon-opis"></pre>
-      <div id="anon-stajaliste-wrap"><h3>Stajalište koje se šalje</h3><pre id="anon-stajaliste"></pre></div>
-      <div class="row">
-        <button type="button" id="posalji">Pošalji i pretraži</button>
-        <button type="button" id="natrag" class="secondary">Natrag na uređivanje</button>
-      </div>
+      <details id="napredno"><summary>Napredno</summary><div id="filteri" class="row"></div></details>
     </section>
 
     <section id="status" hidden></section>
-    <section id="sinteza" hidden></section>
-    <section id="odluke"></section>
+    <section id="odgovor" hidden></section>
+    <section id="rezultati"></section>
+    <section id="ostale"></section>
     <section id="upozorenja" hidden></section>
   </main>
 
+  <aside id="ladica" class="drawer" hidden aria-label="Spremljeno">
+    <div class="drawer-head"><h2>Spremljeno</h2><button type="button" class="link-btn" data-zatvori>Zatvori ✕</button></div>
+    <div class="row center">
+      <label for="predmet">Predmet</label>
+      <select id="predmet"></select>
+      <button type="button" id="novi-predmet" class="link-btn">+ Novi</button>
+    </div>
+    <form id="novi-predmet-forma" class="row center" hidden>
+      <input id="novi-predmet-naziv" placeholder="Naziv predmeta (npr. K-123/2026)" required>
+      <button type="submit" class="secondary">Otvori</button>
+    </form>
+    <p id="predmet-info" class="meta"></p>
+    <button type="button" id="izvoz" class="secondary">Izvezi spremljene u Word</button>
+    <h3>Spremljene odluke</h3>
+    <div id="spremljene"></div>
+    <h3>Povijest pretraga</h3>
+    <ul id="pretrage-lista" class="history"></ul>
+  </aside>
+
+  <aside id="korisnici" class="drawer wide" hidden aria-label="Korisnici">
+    <div class="drawer-head"><h2>Korisnici</h2><button type="button" class="link-btn" data-zatvori>Zatvori ✕</button></div>
+    <p class="meta">Novi korisnici se registriraju na stranici za prijavu i čekaju vaše odobrenje. Potrošnja je za tekući mjesec.</p>
+    <div id="popis-korisnika"></div>
+  </aside>
+
+  <aside id="postavke" class="drawer" hidden aria-label="Postavke">
+    <div class="drawer-head"><h2>Postavke</h2><button type="button" class="link-btn" data-zatvori>Zatvori ✕</button></div>
+    <p id="korisnik" class="meta"></p>
+    <div id="admin-postavke" hidden>
+    <form id="postavke-forma" class="stack">
+      <label for="api-kljuc">Anthropic API ključ</label>
+      <input id="api-kljuc" type="password" autocomplete="off" placeholder="sk-ant-… (prazno = bez promjene)">
+      <p id="kljuc-stanje" class="meta"></p>
+      <label for="max-odluka">Najviše odluka za detaljnu analizu <span class="meta">(svaka je jedan poziv modela)</span></label>
+      <input id="max-odluka" type="number" min="1" max="30">
+      <label for="kontakt">Kontakt e-pošta za odluke.sudovi.hr</label>
+      <input id="kontakt" type="email" placeholder="ured@primjer.hr">
+      <div><button type="submit">Spremi postavke</button></div>
+    </form>
+    <h3>Cjenik</h3>
+    <p id="cjenik-stanje" class="meta"></p>
+    <button type="button" id="osvjezi-cjenik" class="secondary">Osvježi cjenik sada</button>
+    </div>
+    <h3>Promjena lozinke</h3>
+    <form id="lozinka-forma" class="stack">
+      <label for="stara-lozinka">Trenutna lozinka</label>
+      <input id="stara-lozinka" type="password" autocomplete="current-password" required>
+      <label for="nova-lozinka">Nova lozinka <span class="meta">(barem 8 znakova)</span></label>
+      <input id="nova-lozinka" type="password" autocomplete="new-password" required minlength="8">
+      <div><button type="submit" class="secondary">Promijeni lozinku</button></div>
+    </form>
+    <p id="postavke-poruka" class="meta"></p>
+  </aside>
+
   <footer>
     Izvori: <a href="https://odluke.sudovi.hr/" rel="noopener">odluke.sudovi.hr</a>, EUR-Lex, CURIA.
-    Analize izrađuje jezični model i mogu sadržavati pogreške – uvijek provjerite izvornu odluku. Ovo nije pravni savjet.
+    Analize izrađuje jezični model i mogu sadržavati pogreške – prije upotrebe provjerite izvornu odluku. Ovo nije pravni savjet.
   </footer>
   <script src="app.js"></script>
 </body>

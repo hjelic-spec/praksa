@@ -1,14 +1,16 @@
 // Tijek obrade jednog upita:
-//   opis -> razrada (Claude) -> pretraživanje izvora -> dohvat odluka ->
-//   analiza svake odluke (Claude) + deterministička ekstrakcija referenci ->
-//   provjera citata i EU akata -> povezivanje predmeta -> sinteza (Claude).
+//   upit -> razumijevanje (Claude) -> pretraživanje izvora (širi skup kandidata) ->
+//   predselekcija po isječcima (Claude) -> dohvat i analiza odabranih odluka kao presedana (Claude)
+//   + deterministička ekstrakcija referenci -> provjera citata i EU akata -> povezivanje predmeta ->
+//   odgovor na upit (Claude).
 import { config } from './config.js';
 import * as llm from './llm.js';
 import * as odluke from './sources/odluke.js';
 import * as local from './sources/local.js';
 import { caseKey, extractCaseNumbers, extractEuReferences, quoteInText } from './extract.js';
 import { verifyAll } from './eu.js';
-import { weigh } from './authority.js';
+import { weigh, citationLine } from './authority.js';
+import { createCostTracker } from './pricing.js';
 
 const SOURCES = { odluke, local };
 
@@ -68,35 +70,69 @@ export function linkRelated(items) {
   return items;
 }
 
-export async function runQuery({ opis, stajaliste = '', filters = {}, sources = config.sources, deps = {} }, progress = () => {}) {
+// Datumski filtar: ručno zadani ima prednost, inače onaj koji je model izveo iz upita.
+function mergeFilters(filters = {}, plan) {
+  const out = { ...filters };
+  // Model ponekad vrati datum u drugom obliku; tražilici ide samo ispravan YYYY-MM-DD.
+  const iso = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v ?? '') ? v : '');
+  if (!out.datumOd && iso(plan.datum_od)) out.datumOd = plan.datum_od;
+  if (!out.datumDo && iso(plan.datum_do)) out.datumDo = plan.datum_do;
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v));
+}
+
+// Viši sud i veća relevantnost prvo.
+const byRelevance = (a, b) => b.analiza.relevantnost - a.analiza.relevantnost || (a.tezina?.razina ?? 9) - (b.tezina?.razina ?? 9);
+
+export async function runQuery({ opis, filters = {}, sources = config.sources, deps = {} }, progress = () => {}) {
   const L = deps.llm ?? llm;
   const S = deps.sources ?? SOURCES;
   const upozorenja = [];
+  const costs = createCostTracker();
+  const track = (model, usage) => costs.add(model, usage);
+  const usd = () => `trošak dosad ≈ $${costs.summary.usd.toFixed(3)}`;
 
-  progress({ korak: 'razrada', poruka: 'Razrađujem opis i pripremam upite za tražilicu…' });
-  const plan = await L.planQuery(opis, stajaliste);
+  progress({ korak: 'razrada', poruka: 'Razumijem upit i pripremam pretragu…' });
+  const plan = await L.planQuery(opis, track);
+  const primijenjeniFilteri = mergeFilters(filters, plan);
 
-  progress({ korak: 'pretrazivanje', poruka: `Pretražujem (${plan.upiti.length} upita)…` });
+  progress({ korak: 'pretrazivanje', poruka: `Pretražujem odluke (${plan.upiti.length} upita)…` });
   const refs = new Map();
   for (const name of sources) {
     const src = S[name];
     if (!src) continue;
+    let failures = 0;
     for (const q of plan.upiti) {
       try {
-        for (const r of await src.search(q, { filters, limit: config.maxDecisions })) {
+        for (const r of await src.search(q, { filters: primijenjeniFilteri, limit: config.resultsPerQuery })) {
           if (!refs.has(r.url)) refs.set(r.url, { ...r, upiti: [q], src: name });
           else refs.get(r.url).upiti.push(q);
         }
+        failures = 0;
       } catch (e) {
         upozorenja.push(`Izvor "${name}", upit "${q}": ${e.message}`);
-        break; // isti izvor vjerojatno neće raditi ni za ostale upite
+        // Pojedinačna greška (npr. istek vremena) ne prekida pretragu; tri zaredom znače da izvor ne radi.
+        if (++failures >= 3) break;
       }
     }
   }
-  // Prednost odlukama koje je pronašlo više upita
-  const candidates = [...refs.values()].sort((a, b) => b.upiti.length - a.upiti.length).slice(0, config.maxDecisions);
-  if (!candidates.length) {
-    return { opis, stajaliste, plan, odluke: [], sinteza: null, upozorenja: [...upozorenja, 'Nije pronađena nijedna odluka.'] };
+  // Prednost odlukama koje je pronašlo više upita.
+  const pool = [...refs.values()].sort((a, b) => b.upiti.length - a.upiti.length).slice(0, config.maxCandidates);
+  const base = { opis, plan, primijenjeniFilteri, pregledano: pool.length };
+  if (!pool.length) {
+    return { ...base, odluke: [], odgovor: null, trosak: costs.summary, upozorenja: [...upozorenja, 'Nije pronađena nijedna odluka.'] };
+  }
+
+  // Predselekcija po isječcima: puna analiza samo za najvjerojatnije relevantne odluke.
+  let candidates = pool.slice(0, config.maxDecisions);
+  if (pool.length > config.maxDecisions && L.screenCandidates) {
+    progress({ korak: 'predselekcija', poruka: `Odabirem najrelevantnije od ${pool.length} pronađenih odluka… (${usd()})` });
+    try {
+      const { odabrane } = await L.screenCandidates(plan, pool, config.maxDecisions, track);
+      const picked = [...new Set(odabrane.map((o) => o.id))].filter((i) => pool[i]).slice(0, config.maxDecisions).map((i) => pool[i]);
+      if (picked.length) candidates = picked;
+    } catch (e) {
+      upozorenja.push(`Predselekcija nije uspjela (${e.message}); analiziraju se odluke koje je pronašlo najviše upita.`);
+    }
   }
 
   let done = 0;
@@ -106,8 +142,11 @@ export async function runQuery({ opis, stajaliste = '', filters = {}, sources = 
       if (!d.tekst || d.tekst.length < 200) throw new Error('tekst odluke nije pronađen na stranici');
       const skraceno = d.tekst.length > config.maxDecisionChars;
       const tekst = skraceno ? d.tekst.slice(0, config.maxDecisionChars) : d.tekst;
-      const analiza = await L.assessDecision(opis, plan, d, tekst, stajaliste);
+      const analiza = await L.assessDecision(opis, plan, d, tekst, track);
       analiza.relevantnost = Math.max(0, Math.min(100, Math.round(analiza.relevantnost)));
+      // Svaki citat provjerava se doslovno u tekstu odluke.
+      analiza.citati = (analiza.citati ?? []).filter((c) => c.tekst?.trim()).slice(0, 3)
+        .map((c) => ({ ...c, provjeren: quoteInText(c.tekst, d.tekst) }));
 
       const { eu, ekljp } = extractEuReferences(d.tekst);
       const own = d.meta?.poslovniBroj ? caseKey(d.meta.poslovniBroj) : null;
@@ -117,32 +156,35 @@ export async function runQuery({ opis, stajaliste = '', filters = {}, sources = 
         izvor: d.izvor,
         meta: d.meta,
         tezina: weigh(d.meta),
+        navod: citationLine(d),
         upiti: ref.upiti,
         skraceno,
         analiza,
-        citatProvjeren: analiza.citat ? quoteInText(analiza.citat, d.tekst) : null,
-        primijenjeniPropisiUTekstu: analiza.primijenjeni_propisi,
         citiraniPredmeti: uniqueByCaseKey(extractCaseNumbers(d.tekst)).filter((c) => caseKey(c) !== own),
         euReference: await verifyAll(eu),
         ekljp,
       };
-      progress({ korak: 'analiza', poruka: `Analizirano ${++done}/${candidates.length}` });
+      progress({ korak: 'analiza', poruka: `Analizirano ${++done}/${candidates.length} (${usd()})` });
       return result;
     } catch (e) {
       upozorenja.push(`${ref.url}: ${e.message}`);
-      progress({ korak: 'analiza', poruka: `Analizirano ${++done}/${candidates.length}` });
+      progress({ korak: 'analiza', poruka: `Analizirano ${++done}/${candidates.length} (${usd()})` });
       return null;
     }
   });
 
-  const items = linkRelated(analyzed.filter(Boolean))
-    .sort((a, b) => b.analiza.relevantnost - a.analiza.relevantnost);
-  const relevant = items.filter((d) => d.analiza.podudaranje !== 'ne');
+  // Glavni popis (redoslijed odgovara uputama [n] u odgovoru) i ostale pronađene odluke.
+  const items = linkRelated(analyzed.filter(Boolean));
+  const isMain = (d) => d.analiza.podudaranje !== 'ne' && d.analiza.relevantnost >= config.relevanceThreshold;
+  const glavne = items.filter(isMain).sort(byRelevance);
+  const ostale = items.filter((d) => !isMain(d)).sort(byRelevance);
+  glavne.forEach((d, i) => { d.br = i + 1; d.istaknuta = true; });
+  ostale.forEach((d) => { d.istaknuta = false; });
 
-  let sinteza = null;
-  if (relevant.length) {
-    progress({ korak: 'sinteza', poruka: 'Izrađujem sintezu prakse…' });
-    sinteza = await L.synthesize(opis, relevant, stajaliste);
+  let odgovor = null;
+  if (glavne.length) {
+    progress({ korak: 'odgovor', poruka: `Sastavljam odgovor… (${usd()})` });
+    odgovor = await L.answerQuery(opis, plan, glavne, track);
   }
-  return { opis, stajaliste, plan, odluke: items, sinteza, upozorenja };
+  return { ...base, odluke: [...glavne, ...ostale], odgovor, trosak: costs.summary, upozorenja };
 }
