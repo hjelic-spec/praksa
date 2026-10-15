@@ -6,6 +6,7 @@ import { app, BrowserWindow, Menu, shell } from 'electron';
 if (!app.requestSingleInstanceLock()) app.quit();
 
 let win;
+let home = null; // adresa početnog zaslona (lokalni poslužitelj)
 
 async function createWindow() {
   // Mora biti postavljeno prije učitavanja poslužitelja (config.js ga čita pri učitavanju).
@@ -13,6 +14,7 @@ async function createWindow() {
   const { start } = await import('../src/server.js');
   const { port } = await start({ port: 0 });
   const origin = `http://127.0.0.1:${port}`;
+  home = `${origin}/`;
 
   win = new BrowserWindow({
     width: 1200,
@@ -41,7 +43,11 @@ app.on('second-instance', () => {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: 'Datoteka', submenu: [{ role: 'quit', label: 'Izlaz' }] },
+    { label: 'Datoteka', submenu: [
+      { label: 'Početna', accelerator: 'Alt+Home', click: () => { if (win && home) win.loadURL(home); } },
+      { type: 'separator' },
+      { role: 'quit', label: 'Izlaz' },
+    ] },
     { label: 'Uredi', submenu: [{ role: 'undo', label: 'Poništi' }, { role: 'redo', label: 'Ponovi' }, { type: 'separator' }, { role: 'cut', label: 'Izreži' }, { role: 'copy', label: 'Kopiraj' }, { role: 'paste', label: 'Zalijepi' }, { role: 'selectAll', label: 'Odaberi sve' }] },
     { label: 'Prikaz', submenu: [{ role: 'reload', label: 'Osvježi' }, { role: 'zoomIn', label: 'Povećaj' }, { role: 'zoomOut', label: 'Smanji' }, { role: 'resetZoom', label: 'Izvorna veličina' }] },
   ]));

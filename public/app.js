@@ -44,6 +44,22 @@ $('#primjeri').addEventListener('click', (e) => {
   opis.focus();
 });
 
+// Povratak na početni zaslon: prazno polje, primjeri upita, bez rezultata (bez ponovnog učitavanja).
+function goHome() {
+  clearResults();
+  state.rezultat = null;
+  $('#status').hidden = true;
+  for (const d of document.querySelectorAll('.drawer')) d.hidden = true;
+  document.body.classList.replace('results', 'landing');
+  opis.value = '';
+  autoGrow();
+  window.scrollTo({ top: 0 });
+  opis.focus();
+}
+$('#pocetna').addEventListener('click', goHome);
+$('#brand').addEventListener('click', (e) => { e.preventDefault(); goHome(); });
+document.addEventListener('keydown', (e) => { if (e.altKey && e.key === 'Home') { e.preventDefault(); goHome(); } });
+
 function clearResults() {
   for (const id of ['#odgovor', '#upozorenja']) $(id).hidden = true;
   $('#rezultati').innerHTML = '';
@@ -185,7 +201,9 @@ function renderCard(d) {
 function render(r, saved) {
   state.rezultat = r;
   document.body.classList.replace('landing', 'results');
-  if (opis.value.trim() !== r.opis) { opis.value = r.opis; autoGrow(); }
+  if (opis.value.trim() !== r.opis) opis.value = r.opis;
+  // Visina polja računa se nakon promjene rasporeda (na zaslonu s rezultatima polje je šire).
+  requestAnimationFrame(autoGrow);
 
   const items = r.odluke ?? [];
   const glavne = items.filter((d) => d.istaknuta ?? d.analiza.podudaranje !== 'ne');
