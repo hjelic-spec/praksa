@@ -7,18 +7,25 @@ async function post(url, body) {
   return data;
 }
 
-function show(msg) {
+function show(msg, ok = false) {
   $('#poruka').hidden = !msg;
+  $('#poruka').className = ok ? 'card uspjeh' : 'greska';
   $('#poruka').textContent = msg ?? '';
+}
+
+function showForm(id) {
+  for (const f of document.querySelectorAll('form')) f.hidden = f.id !== id;
+  $(`#${id}`).querySelector('input').focus();
 }
 
 async function init() {
   const s = await fetch('/api/auth/stanje').then((r) => r.json());
   if (s.prijavljen) { location.href = '/'; return; }
-  const form = s.postoji ? $('#prijava') : $('#postavljanje');
-  form.hidden = false;
-  form.querySelector('input').focus();
+  showForm(s.postoji ? 'prijava' : 'postavljanje');
 }
+
+$('#na-registraciju').addEventListener('click', (e) => { e.preventDefault(); show(); showForm('registracija'); });
+$('#na-prijavu').addEventListener('click', (e) => { e.preventDefault(); show(); showForm('prijava'); });
 
 $('#prijava').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -29,6 +36,21 @@ $('#prijava').addEventListener('submit', async (e) => {
   } catch (err) {
     show(err.message);
     $('#p-lozinka').select();
+  }
+});
+
+$('#registracija').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  show();
+  if ($('#r-lozinka').value !== $('#r-lozinka2').value) return show('Lozinke se ne podudaraju.');
+  try {
+    const r = await post('/api/auth/registracija', { ime: $('#r-ime').value.trim(), email: $('#r-email').value.trim(), lozinka: $('#r-lozinka').value });
+    $('#p-korisnik').value = $('#r-email').value.trim();
+    $('#registracija').reset();
+    showForm('prijava');
+    show(r.poruka, true);
+  } catch (err) {
+    show(err.message);
   }
 });
 

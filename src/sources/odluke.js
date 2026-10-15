@@ -90,10 +90,25 @@ export function parseResults(html, pageUrl) {
     if (!isResultLink(raw, pageUrl)) return;
     const href = canonicalDecisionUrl(raw);
     if (seen.has(href)) return;
-    const row = $(a).closest('tr, li, article, .row, div');
+    // Kartica rezultata na odluke.sudovi.hr: cijela kartica je poveznica s poljima broja,
+    // suda, datuma, pravomoćnosti i isječka (potvrđeno `npm run probe`).
+    const $a = $(a);
+    const field = (sel) => normalizeWs($a.find(sel).first().text()) || null;
+    if ($a.find('.decision-number').length) {
+      seen.set(href, {
+        url: href,
+        naslov: field('.decision-number') ?? href,
+        sud: field('.decision-court'),
+        datum: field('.decision-date'),
+        pravomocnost: field('.final-decision'),
+        isjecak: (field('.result-snippet') ?? '').slice(0, 1200),
+      });
+      return;
+    }
+    const row = $a.closest('tr, li, article, .row, div');
     seen.set(href, {
       url: href,
-      naslov: normalizeWs($(a).text()) || href,
+      naslov: normalizeWs($a.text()) || href,
       isjecak: normalizeWs(row.text()).slice(0, 400),
     });
   });

@@ -23,7 +23,13 @@ export const config = {
   port: Number(process.env.PORT ?? 3000),
   model: process.env.PRAKSA_MODEL ?? 'claude-opus-5-5',
   // Koliko odluka najviše dohvatiti i analizirati po upitu (svaka analiza je jedan API poziv).
-  maxDecisions: Number(process.env.PRAKSA_MAX_DECISIONS ?? 15),
+  maxDecisions: Number(process.env.PRAKSA_MAX_DECISIONS ?? 8),
+  // Koliko kandidata (iz rezultata tražilice) model pregleda po isječcima prije odabira za analizu.
+  maxCandidates: Number(process.env.PRAKSA_MAX_CANDIDATES ?? 60),
+  // Rezultata po upitu tražilice (odluke.sudovi.hr prikazuje 10 po stranici).
+  resultsPerQuery: Number(process.env.PRAKSA_RESULTS_PER_QUERY ?? 20),
+  // Odluke ispod ovoga (ili s podudaranjem "ne") prikazuju se samo pod "Ostale pronađene odluke".
+  relevanceThreshold: Number(process.env.PRAKSA_RELEVANCE_THRESHOLD ?? 50),
   // Odluke dulje od ovoga se skraćuju prije analize; skraćivanje se uvijek prikazuje korisniku.
   maxDecisionChars: Number(process.env.PRAKSA_MAX_CHARS ?? 150_000),
   analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 3),
@@ -35,7 +41,12 @@ export const config = {
   // Spremljeni predmeti (pretrage, bilješke); sadrže podatke o predmetima ureda i nisu u gitu.
   predmetiDir: process.env.PRAKSA_PREDMETI_DIR ?? path.join(dataDir, 'predmeti'),
   // Korisnik i lozinka (scrypt) te postavke (API ključ…); nisu u gitu.
-  authFile: path.join(dataDir, 'prijava.json'),
+  authFile: path.join(dataDir, 'prijava.json'), // prijava starije verzije (jedan korisnik); preuzima se u korisnici.json
+  usersFile: path.join(dataDir, 'korisnici.json'),
+  // Web u uredu: PRAKSA_HOST=0.0.0.0 otvara pristup s drugih računala u mreži.
+  host: process.env.PRAKSA_HOST ?? '127.0.0.1',
+  // Dodatni nazivi pod kojima se poslužitelju pristupa (npr. ured-pc:8080), uz lokalne IP adrese i naziv računala.
+  allowedHosts: (process.env.PRAKSA_ALLOWED_HOSTS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
   // Pristupni podaci ugrađeni u instalaciju (nije u gitu; izrađuje `npm run postavi-prijavu`).
   bundledAuthFile: process.env.PRAKSA_BUNDLED_AUTH ?? path.join(root, 'src', 'prijava-ugradena.json'),
   settingsFile: path.join(dataDir, 'postavke.json'),

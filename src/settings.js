@@ -36,18 +36,21 @@ export function publicSettings() {
 
 export function saveSettings({ apiKey, maxOdluka, kontakt }) {
   const err = (m) => Object.assign(new Error(m), { status: 400 });
+  // Sve se provjerava prije bilo kakve promjene, da neuspjelo spremanje ne ostavi djelomične postavke.
+  const next = { ...current };
   if (apiKey !== undefined && apiKey !== '') {
     if (typeof apiKey !== 'string' || !/^sk-ant-[\w-]{20,}$/.test(apiKey.trim())) throw err('API ključ mora počinjati sa "sk-ant-".');
-    current.apiKey = apiKey.trim();
+    next.apiKey = apiKey.trim();
   }
   if (maxOdluka !== undefined) {
     const n = Number(maxOdluka);
     if (!Number.isInteger(n) || n < 1 || n > 30) throw err('Broj odluka mora biti između 1 i 30.');
-    current.maxOdluka = n;
+    next.maxOdluka = n;
   }
-  if (kontakt !== undefined) current.kontakt = String(kontakt).trim().slice(0, 200);
+  if (kontakt !== undefined) next.kontakt = String(kontakt).trim().slice(0, 200);
   fs.mkdirSync(config.dataDir, { recursive: true });
-  fs.writeFileSync(config.settingsFile, JSON.stringify(current, null, 1));
+  fs.writeFileSync(config.settingsFile, JSON.stringify(next, null, 1));
+  current = next;
   apply();
   return publicSettings();
 }

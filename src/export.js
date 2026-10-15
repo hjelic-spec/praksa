@@ -1,29 +1,29 @@
-// Izvoz odabranih odluka predmeta u .docx: citat za podnesak, doslovni citat iz odluke,
-// pravno shvaćanje, kako odluku iskoristiti i bilješka odvjetnika.
+// Izvoz spremljenih odluka predmeta u .docx, složenih kao presedani: navod za podnesak,
+// pravno shvaćanje, doslovni citati (s oznakom provjere), bitne činjenice, razlike u odnosu
+// na upit, ishod, propisi i bilješka odvjetnika.
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, ExternalHyperlink } from 'docx';
+import { citationLine } from './authority.js';
+
+export { citationLine };
 
 const GROUPS = [
-  ['u prilog', 'Odluke u prilog našem stajalištu'],
-  ['protiv', 'Odluke protiv našeg stajališta'],
+  ['u prilog', 'Odluke u prilog traženom stajalištu'],
+  ['protiv', 'Odluke protiv traženog stajališta'],
   ['mješovito', 'Odluke s mješovitim stajalištem'],
-  ['neutralno', 'Ostale odluke'],
+  ['neutralno', 'Odluke'],
 ];
-
-// "Presuda Vrhovnog suda…" zahtijeva padež naziva suda, pa se koristi neutralan zapis:
-// "Vrhovni sud Republike Hrvatske, Rev-49/2024-2 od 5.6.2024. (presuda), ECLI:…"
-export function citationLine(d) {
-  const m = d.meta ?? {};
-  const parts = [m.sud, [m.poslovniBroj ?? d.naslov, m.datum && `od ${m.datum}`].filter(Boolean).join(' ')].filter(Boolean);
-  let s = parts.join(', ');
-  if (m.vrsta) s += ` (${m.vrsta.toLowerCase()})`;
-  if (m.ecli) s += `, ${m.ecli}`;
-  return s;
-}
 
 const p = (text, opts = {}) => new Paragraph({ children: [new TextRun({ text, ...opts })], spacing: { after: 120 } });
 const labeled = (label, text) => (text
   ? new Paragraph({ children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun(text)], spacing: { after: 120 } })
   : null);
+
+// Spremljeni rezultati starijih verzija imaju jedan citat (citat + citatProvjeren).
+export function quotesOf(d) {
+  const a = d.analiza;
+  if (Array.isArray(a.citati)) return a.citati;
+  return a.citat ? [{ tekst: a.citat, znacaj: '', provjeren: Boolean(d.citatProvjeren) }] : [];
+}
 
 function decisionBlock(d) {
   const a = d.analiza;
@@ -33,17 +33,24 @@ function decisionBlock(d) {
     t.stara && `odluka je stara ${t.starost} godina – provjerite važeći propis`,
     a.primjenjivost?.upozorenje && `primjenjivost (procjena modela): ${a.primjenjivost.razlog}`,
   ].filter(Boolean);
+  const quotes = quotesOf(d).flatMap((c) => [
+    p(`„${c.tekst}“`, { italics: true }),
+    p(c.provjeren ? `Citat je provjeren u tekstu odluke${c.znacaj ? ` (${c.znacaj})` : ''}.` : 'Upozorenje: citat nije pronađen doslovno u tekstu odluke – provjerite izvornik.',
+      { size: 18, color: c.provjeren ? '555555' : 'A12A2A' }),
+  ]);
   return [
-    new Paragraph({ heading: HeadingLevel.HEADING_3, children: [new TextRun(citationLine(d))] }),
+    new Paragraph({ heading: HeadingLevel.HEADING_3, children: [new TextRun(d.navod ?? citationLine(d))] }),
     new Paragraph({
       children: [new ExternalHyperlink({ link: d.url, children: [new TextRun({ text: d.url, style: 'Hyperlink' })] })],
       spacing: { after: 120 },
     }),
-    a.citat ? p(`„${a.citat}“`, { italics: true }) : null,
-    a.citat ? p(d.citatProvjeren ? 'Citat je provjeren u tekstu odluke.' : 'Upozorenje: citat nije pronađen doslovno u tekstu odluke – provjerite izvornik.', { size: 18, color: d.citatProvjeren ? '555555' : 'A12A2A' }) : null,
     labeled('Pravno shvaćanje', a.pravno_shvacanje),
+    ...quotes,
+    labeled('Pravno pitanje', a.pravno_pitanje),
+    labeled('Bitne činjenice', a.bitne_cinjenice ?? a.cinjenice_predmeta),
+    labeled('Razlike u odnosu na naš predmet', a.razlike_od_upita),
     labeled('Ishod', a.ishod),
-    labeled('Odnos prema našem stajalištu', a.smjer_obrazlozenje),
+    labeled('Primijenjeni propisi', (a.primijenjeni_propisi ?? []).join('; ')),
     labeled(a.smjer === 'protiv' ? 'Kako se suprotstaviti' : 'Kako iskoristiti', a.kako_iskoristiti),
     labeled('Napomene', notes.join('; ')),
     labeled('Bilješka', d.biljeska),

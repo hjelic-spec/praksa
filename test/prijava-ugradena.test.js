@@ -30,14 +30,15 @@ test('s ugrađenom prijavom nema prvog postavljanja ni drugih korisnika', async 
   assert.equal((await post('/api/auth/prijava', { korisnik: 'Ured@Primjer.hr', lozinka: 'Tajna Lozinka!' })).status, 200, 'e-pošta bez obzira na velika slova');
 });
 
-test('promijenjena lozinka ima prednost; brisanjem se vraća ugrađena', async () => {
+test('ugrađena prijava postaje administrator; promijenjena lozinka se pamti', async () => {
+  const users = JSON.parse(await fs.readFile(path.join(tmp, 'data', 'korisnici.json'), 'utf8'));
+  assert.deepEqual(users.map((u) => [u.email, u.uloga, u.status]), [['ured@primjer.hr', 'admin', 'odobren']]);
   const { cookie } = await post('/api/auth/prijava', { korisnik: 'ured@primjer.hr', lozinka: 'Tajna Lozinka!' });
   assert.equal((await post('/api/auth/lozinka', { stara: 'Tajna Lozinka!', nova: 'Nova Lozinka 2' }, cookie)).status, 200);
   assert.equal((await post('/api/auth/prijava', { korisnik: 'ured@primjer.hr', lozinka: 'Tajna Lozinka!' })).status, 401);
   assert.equal((await post('/api/auth/prijava', { korisnik: 'ured@primjer.hr', lozinka: 'Nova Lozinka 2' })).status, 200);
-  await fs.rm(path.join(tmp, 'data', 'prijava.json'));
-  assert.equal((await post('/api/auth/prijava', { korisnik: 'ured@primjer.hr', lozinka: 'Tajna Lozinka!' })).status, 200);
-  assert.equal((await post('/api/auth/postavljanje', { korisnik: 'netko', lozinka: 'neka-lozinka' })).status, 409, 'ni nakon brisanja nema postavljanja');
+  auth.loadUsers(); // kao nakon ponovnog pokretanja
+  assert.equal((await post('/api/auth/prijava', { korisnik: 'ured@primjer.hr', lozinka: 'Nova Lozinka 2' })).status, 200);
 });
 
 test.after(async () => {

@@ -1,16 +1,12 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const link = (url, text) => (/^https?:\/\//.test(url) ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(text)}</a>` : esc(text));
+const usd = (n) => `$${(n ?? 0).toFixed(n >= 1 ? 2 : 3)}`;
 
 const FILTER_LABELS = { datumOd: 'Datum odluke od', datumDo: 'Datum odluke do' };
-const SMJER = {
-  'u prilog': ['U prilog našem stajalištu', 'da'],
-  protiv: ['Protiv našeg stajališta', 'ne'],
-  mješovito: ['Mješovito', 'djelomično'],
-  neutralno: ['Ostale odluke', ''],
-};
+const SMJER_CLASS = { 'u prilog': 'da', protiv: 'ne', mješovito: 'djelomično' };
 
-const state = { predmet: null, rezultat: null, anon: null, dodatni: [], iskljuceno: [], ukljuceno: [] };
+const state = { predmet: null, predmetId: null, rezultat: null };
 
 async function api(url, opts = {}) {
   const res = await fetch(url, {
@@ -24,60 +20,363 @@ async function api(url, opts = {}) {
   return data;
 }
 
-const usd = (n) => `$${(n ?? 0).toFixed(n >= 1 ? 2 : 3)}`;
-
-// ---------- predmeti ----------
-
-async function loadPredmeti(selectId) {
-  const list = await api('/api/predmeti');
-  const sel = $('#predmet');
-  sel.innerHTML = '<option value="">— bez predmeta (pretraga se ne sprema) —</option>' +
-    list.map((p) => `<option value="${esc(p.id)}">${esc(p.naziv)} (${p.brojPretraga} pretr., ${usd(p.trosakUSD)})</option>`).join('');
-  const id = selectId ?? localGet('predmet');
-  if (id && list.some((p) => p.id === id)) sel.value = id;
-  await selectPredmet(sel.value);
-}
-
 function localGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localSet(k, v) { try { localStorage.setItem(k, v); } catch { /* nije bitno */ } }
 
-async function selectPredmet(id) {
+function showError(err) {
+  $('#status').hidden = false;
+  $('#status').innerHTML = `<span class="greska">Greška: ${esc(err.message)}</span>`;
+}
+
+// ---------- pretraga ----------
+
+const opis = $('#opis');
+function autoGrow() { opis.style.height = 'auto'; opis.style.height = `${Math.min(opis.scrollHeight, 240)}px`; }
+opis.addEventListener('input', autoGrow);
+opis.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#upit').requestSubmit(); }
+});
+$('#primjeri').addEventListener('click', (e) => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  opis.value = chip.textContent.trim();
+  autoGrow();
+  opis.focus();
+});
+
+function clearResults() {
+  for (const id of ['#odgovor', '#upozorenja']) $(id).hidden = true;
+  $('#rezultati').innerHTML = '';
+  $('#ostale').innerHTML = '';
+}
+
+$('#upit').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#trazi');
+  btn.disabled = true;
+  document.body.classList.replace('landing', 'results');
+  clearResults();
+  $('#status').hidden = false;
+  $('#status').innerHTML = '<span class="spinner"></span> Šaljem upit…';
+  const filters = Object.fromEntries([...document.querySelectorAll('#filteri input')].filter((i) => i.value).map((i) => [i.name, i.value]));
+  try {
+    const { id } = await api('/api/upit', { method: 'POST', body: { opis: opis.value, filters, predmetId: state.predmetId } });
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const job = await api(`/api/upit/${id}`);
+      $('#status').innerHTML = `<span class="spinner"></span> ${esc(job.napredak.at(-1)?.poruka ?? 'Radim…')}`;
+      if (job.status === 'gotovo') {
+        $('#status').hidden = true;
+        await selectPredmet(job.predmetId);
+        render(job.rezultat);
+        break;
+      }
+      if (job.status === 'greška') throw new Error(job.greska);
+    }
+  } catch (err) {
+    showError(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- prikaz rezultata ----------
+
+// Stariji spremljeni rezultati imaju drukčija polja (jedan citat, sinteza umjesto odgovora).
+function quotesOf(d) {
+  const a = d.analiza;
+  if (Array.isArray(a.citati)) return a.citati;
+  return a.citat ? [{ tekst: a.citat, znacaj: '', provjeren: Boolean(d.citatProvjeren) }] : [];
+}
+function answerOf(r) {
+  if (r.odgovor) return r.odgovor;
+  const s = r.sinteza;
+  return s ? { kratki_odgovor: s.pregled, vodeca_praksa: s.prevladavajuce_stajaliste, suprotna_praksa: s.razlike_u_praksi, upozorenja: [], dalje_provjeriti: s.preporuke_za_daljnje_istrazivanje ?? [], veza_s_pravom_eu: s.veza_s_pravom_eu } : null;
+}
+
+const refs = (text) => esc(text).replace(/\[(\d+)\]/g, '<a href="#odluka-$1" class="ref">[$1]</a>');
+
+function relevanceDots(n) {
+  const full = Math.round((n ?? 0) / 20);
+  return `<span class="dots" title="relevantnost ${n}/100" aria-label="relevantnost ${n} od 100">${'●'.repeat(full)}${'○'.repeat(5 - full)}</span>`;
+}
+
+function headerLine(d) {
+  const m = d.meta ?? {};
+  const t = d.tezina ?? {};
+  const pravomocnost = t.pravomocna === true ? 'pravomoćna' : t.pravomocna === false ? '<span class="warn">nije pravomoćna</span>' : '';
+  return [esc(m.sud), `<strong>${esc(m.poslovniBroj ?? d.naslov)}</strong>`, esc(m.datum), esc(m.vrsta?.toLowerCase()), pravomocnost]
+    .filter(Boolean).join(' · ');
+}
+
+function navodText(d) {
+  const q = quotesOf(d)[0];
+  return `${d.navod ?? d.meta?.poslovniBroj ?? d.naslov}${q ? ` – „${q.tekst}“` : ''}`;
+}
+
+function quoteBlock(c) {
+  return `<blockquote>„${esc(c.tekst)}“</blockquote>
+    <p class="meta">${c.provjeren ? '✔ provjeren u tekstu odluke' : '<span class="warn">⚠ nije pronađen doslovno – provjerite izvornik</span>'}${c.znacaj ? ` · ${esc(c.znacaj)}` : ''}</p>`;
+}
+
+function renderEu(d) {
+  const rows = (d.euReference ?? []).map((r) => `<li>${r.url ? link(r.url, r.oznaka) : esc(r.oznaka)}${r.celex ? ` <span class="meta">CELEX ${esc(r.celex)}</span>` : ''}</li>`);
+  if (d.ekljp) rows.push('<li>Poziva se na EKLJP / Europski sud za ljudska prava</li>');
+  const hyp = (d.analiza.moguce_eu_poveznice ?? []).map((h) => `<li class="hyp">${esc(h.akt)} – ${esc(h.obrazlozenje)} <span class="meta">(pretpostavka modela)</span></li>`);
+  return rows.length || hyp.length ? `<ul>${rows.join('')}${hyp.join('')}</ul>` : '';
+}
+
+function details(d) {
+  const a = d.analiza;
+  const t = d.tezina ?? {};
+  const [, ...ostaliCitati] = quotesOf(d);
+  const povezani = [
+    ...(d.povezaniURezultatima ?? []).map((r) => `<li>${link(r.url, r.poslovniBroj)} – ${esc(r.odnos)}</li>`),
+    ...(d.citiraniPredmeti ?? []).map((c) => `<li>${esc(c)} <span class="meta">(citiran u odluci)</span></li>`),
+  ];
+  const napomene = [
+    t.stara && `Odluka je stara ${t.starost} godina – provjerite primjenjuje li se isti propis.`,
+    a.primjenjivost?.upozorenje && `${a.primjenjivost.razlog} (procjena modela)`,
+    d.skraceno && 'Odluka je preduga pa je za analizu skraćena.',
+  ].filter(Boolean);
+  const eu = renderEu(d);
+  const row = (label, html) => (html ? `<dt>${label}</dt><dd>${html}</dd>` : '');
+  return `<dl>
+    ${row('Pravno pitanje', esc(a.pravno_pitanje))}
+    ${row('Bitne činjenice', esc(a.bitne_cinjenice ?? a.cinjenice_predmeta))}
+    ${row('Razlike u odnosu na upit', esc(a.razlike_od_upita))}
+    ${row('Ishod', esc(a.ishod))}
+    ${row('Primijenjeni propisi', esc((a.primijenjeni_propisi ?? []).join('; ')))}
+    ${row(a.smjer === 'protiv' ? 'Kako se suprotstaviti' : 'Kako iskoristiti', esc(a.kako_iskoristiti))}
+    ${row('Ostali citati', ostaliCitati.map(quoteBlock).join(''))}
+    ${row('Povezani predmeti', povezani.length ? `<ul>${povezani.join('')}</ul>` : '')}
+    ${row('Napomene', napomene.map((n) => `<p class="warn">${esc(n)}</p>`).join(''))}
+    ${row('Pravo EU / EKLJP', eu)}
+  </dl>`;
+}
+
+function saveButton(d) {
+  const saved = state.predmet?.odluke?.[d.url]?.odabrano;
+  return `<button type="button" class="link-btn" data-spremi="${esc(d.url)}">${saved ? '★ Spremljeno' : '☆ Spremi'}</button>`;
+}
+
+function renderCard(d) {
+  const a = d.analiza;
+  const [prvi] = quotesOf(d);
+  const smjer = a.smjer && a.smjer !== 'neutralno' ? `<span class="badge ${SMJER_CLASS[a.smjer] ?? ''}">${esc(a.smjer)}</span>` : '';
+  return `<article class="card precedent" id="odluka-${d.br}">
+    <div class="card-head">
+      <div class="head-line"><span class="num">[${d.br}]</span> ${headerLine(d)}</div>
+      ${relevanceDots(a.relevantnost)}
+    </div>
+    ${a.odgovor_na_upit ? `<p class="answer-line">${esc(a.odgovor_na_upit)}</p>` : `<p class="answer-line">${esc(a.objasnjenje)}</p>`}
+    <div class="ratio"><span class="label">Pravno shvaćanje</span>${esc(a.pravno_shvacanje)}</div>
+    ${prvi ? quoteBlock(prvi) : ''}
+    <div class="actions">
+      ${smjer}
+      <button type="button" class="link-btn" data-kopiraj="${esc(d.url)}">Kopiraj za podnesak</button>
+      ${saveButton(d)}
+      ${link(d.url, 'Izvornik ↗')}
+    </div>
+    <details class="more"><summary>Svi detalji</summary>${details(d)}</details>
+  </article>`;
+}
+
+function render(r, saved) {
+  state.rezultat = r;
+  document.body.classList.replace('landing', 'results');
+  if (opis.value.trim() !== r.opis) { opis.value = r.opis; autoGrow(); }
+
+  const items = r.odluke ?? [];
+  const glavne = items.filter((d) => d.istaknuta ?? d.analiza.podudaranje !== 'ne');
+  const ostale = items.filter((d) => !glavne.includes(d));
+  glavne.forEach((d, i) => { d.br ??= i + 1; });
+
+  const odg = answerOf(r);
+  const status = [
+    r.pregledano ? `pregledano ${r.pregledano} odluka` : null,
+    `prikazano ${glavne.length} relevantnih`,
+    r.trosak ? `trošak ${usd(r.trosak.usd)}` : null,
+    saved ? `spremljena pretraga od ${new Date(saved.datum).toLocaleString('hr-HR')}` : null,
+  ].filter(Boolean).join(' · ');
+  const filt = r.primijenjeniFilteri && Object.keys(r.primijenjeniFilteri).length
+    ? ` · razdoblje: ${esc([r.primijenjeniFilteri.datumOd, r.primijenjeniFilteri.datumDo].map((x) => x ?? '…').join(' – '))}` : '';
+
+  $('#odgovor').hidden = false;
+  $('#odgovor').innerHTML = `<div class="answer-box">
+    ${odg ? `<h2>Odgovor</h2>
+      <p class="answer-main">${refs(odg.kratki_odgovor)}</p>
+      ${odg.vodeca_praksa ? `<p><strong>Vodeća praksa:</strong> ${refs(odg.vodeca_praksa)}</p>` : ''}
+      ${odg.suprotna_praksa ? `<p><strong>Suprotna praksa:</strong> ${refs(odg.suprotna_praksa)}</p>` : ''}
+      ${odg.upozorenja?.length ? `<ul class="warn-list">${odg.upozorenja.map((u) => `<li>${refs(u)}</li>`).join('')}</ul>` : ''}
+      ${odg.veza_s_pravom_eu ? `<p class="meta"><strong>Pravo EU:</strong> ${refs(odg.veza_s_pravom_eu)}</p>` : ''}
+      ${odg.dalje_provjeriti?.length ? `<details><summary>Što još provjeriti</summary><ul>${odg.dalje_provjeriti.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}`
+      : '<h2>Nema relevantnih odluka</h2><p>Pokušajte drukčije opisati pravno pitanje ili proširiti razdoblje.</p>'}
+    <p class="meta status-line">${esc(status)}${filt}</p>
+    ${r.plan?.pravno_pitanje ? `<details class="meta"><summary>Kako je upit shvaćen</summary>
+      <p><strong>Pravno pitanje:</strong> ${esc(r.plan.pravno_pitanje)}</p>
+      ${r.plan.trazeno_stajaliste ? `<p><strong>Traženo stajalište:</strong> ${esc(r.plan.trazeno_stajaliste)}</p>` : ''}
+      <p>Upiti tražilici: ${esc(r.plan.upiti.join(' | '))}</p></details>` : ''}
+  </div>`;
+
+  $('#rezultati').innerHTML = glavne.map(renderCard).join('');
+  $('#ostale').innerHTML = ostale.length ? `<details class="others"><summary>Ostale pronađene odluke (${ostale.length})</summary><ul>
+    ${ostale.map((d) => `<li>${link(d.url, d.meta?.poslovniBroj ?? d.naslov)} <span class="meta">${esc([d.meta?.sud, d.meta?.datum].filter(Boolean).join(' · '))} – ${esc(d.analiza.odgovor_na_upit ?? d.analiza.objasnjenje ?? '')}</span></li>`).join('')}
+  </ul></details>` : '';
+
+  const upoz = r.upozorenja ?? [];
+  $('#upozorenja').hidden = !upoz.length;
+  $('#upozorenja').innerHTML = `<details><summary>Tehničke napomene (${upoz.length})</summary><ul>${upoz.map((u) => `<li>${esc(u)}</li>`).join('')}</ul></details>`;
+}
+
+const findDecision = (url) => state.rezultat?.odluke?.find((d) => d.url === url);
+
+// Clipboard API, a ako ga preglednik ne dopusti, stariji način preko skrivenog polja.
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.append(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  }
+}
+
+$('main').addEventListener('click', async (e) => {
+  const copy = e.target.closest('[data-kopiraj]');
+  const save = e.target.closest('[data-spremi]');
+  if (copy) {
+    const d = findDecision(copy.dataset.kopiraj);
+    copy.textContent = (await copyText(navodText(d))) ? 'Kopirano ✔' : 'Kopiranje nije uspjelo';
+    setTimeout(() => { copy.textContent = 'Kopiraj za podnesak'; }, 2000);
+  } else if (save) {
+    await toggleSaved(save.dataset.spremi).catch(showError);
+  }
+});
+
+async function toggleSaved(url) {
+  if (!state.predmetId) throw new Error('Najprije pokrenite pretragu ili odaberite predmet.');
+  const now = !state.predmet?.odluke?.[url]?.odabrano;
+  const o = await api(`/api/predmeti/${state.predmetId}/odluke`, { method: 'POST', body: { url, odabrano: now } });
+  state.predmet.odluke[url] = o;
+  for (const b of document.querySelectorAll(`[data-spremi="${CSS.escape(url)}"]`)) b.textContent = now ? '★ Spremljeno' : '☆ Spremi';
+  renderDrawer();
+}
+
+// ---------- predmeti i ladica "Spremljeno" ----------
+
+async function loadPredmeti(selectId) {
+  const list = await api('/api/predmeti');
+  const id = selectId ?? state.predmetId ?? localGet('predmet') ?? list.find((p) => p.zadani)?.id ?? list[0]?.id ?? null;
+  $('#predmet').innerHTML = list.map((p) => `<option value="${esc(p.id)}">${esc(p.naziv)} (${p.brojSpremljenih} spremljeno)</option>`).join('')
+    || '<option value="">— nema predmeta —</option>';
+  if (id && list.some((p) => p.id === id)) { $('#predmet').value = id; await selectPredmet(id, false); }
+}
+
+async function selectPredmet(id, reloadList = true) {
+  if (!id) return;
+  state.predmetId = id;
   localSet('predmet', id);
-  state.predmet = id ? await api(`/api/predmeti/${id}`) : null;
-  renderPredmet();
-  if (state.rezultat) render(state.rezultat);
+  state.predmet = await api(`/api/predmeti/${id}`);
+  if (reloadList) {
+    const opt = [...$('#predmet').options].some((o) => o.value === id);
+    if (!opt) await loadPredmeti(id); else $('#predmet').value = id;
+  }
+  renderDrawer();
 }
 
-function selectedCount() {
-  return state.predmet ? Object.values(state.predmet.odluke).filter((o) => o.odabrano).length : 0;
+// Najnovija analiza spremljene odluke iz povijesti pretraga.
+function savedDecision(url) {
+  for (const s of state.predmet?.pretrage ?? []) {
+    const d = s.rezultat?.odluke?.find((x) => x.url === url);
+    if (d) return d;
+  }
+  return null;
 }
 
-function renderPredmet() {
+function renderDrawer() {
   const p = state.predmet;
-  $('#pretrage').hidden = !p || !p.pretrage.length;
-  $('#izvoz').hidden = !p;
-  $('#predmet-info').textContent = p
-    ? `Pretrage i bilješke spremaju se lokalno. Spremljenih pretraga: ${p.pretrage.length}. Ukupni procijenjeni trošak predmeta: ${usd(p.trosakUSD)}.`
-    : 'Odaberite ili otvorite predmet kako bi se pretrage, bilješke i odabir odluka spremili.';
-  if (!p) return;
-  const n = selectedCount();
-  $('#izvoz').textContent = `Izvezi odabrane u Word (${n})`;
-  $('#izvoz').disabled = !n;
-  $('#pretrage-lista').innerHTML = p.pretrage.map((s) => `<li>
-    <a href="#" data-pretraga="${esc(s.id)}">${esc(new Date(s.datum).toLocaleString('hr-HR'))}</a>
-    – ${esc(s.opis.slice(0, 110))}${s.opis.length > 110 ? '…' : ''}
-    <span class="meta">(${s.rezultat?.odluke?.length ?? 0} odluka${s.rezultat?.trosak ? `, ${usd(s.rezultat.trosak.usd)}` : ''})</span>
-    <button type="button" class="link" data-obrisi="${esc(s.id)}" title="Obriši pretragu">obriši</button></li>`).join('');
+  const saved = p ? Object.entries(p.odluke).filter(([, o]) => o.odabrano) : [];
+  $('#broj-spremljenih').textContent = saved.length || '';
+  $('#izvoz').disabled = !saved.length;
+  $('#izvoz').textContent = `Izvezi spremljene u Word (${saved.length})`;
+  $('#predmet-info').textContent = p ? `Pretraga: ${p.pretrage.length} · ukupni procijenjeni trošak ${usd(p.trosakUSD)}` : '';
+  $('#spremljene').innerHTML = saved.length ? saved.map(([url, o]) => {
+    const d = savedDecision(url);
+    return `<div class="saved-item">
+      <div>${link(url, d?.navod ?? d?.meta?.poslovniBroj ?? url)}</div>
+      ${d ? `<p class="meta">${esc(d.analiza.pravno_shvacanje)}</p>` : ''}
+      <textarea data-biljeska="${esc(url)}" rows="2" placeholder="Bilješka (sprema se automatski)">${esc(o.biljeska)}</textarea>
+      <div class="row center"><span class="meta save-state"></span><button type="button" class="link-btn" data-ukloni="${esc(url)}">Ukloni</button></div>
+    </div>`;
+  }).join('') : '<p class="meta">Nema spremljenih odluka. Uz odluku kliknite „☆ Spremi“.</p>';
+  $('#pretrage-lista').innerHTML = (p?.pretrage ?? []).map((s) => `<li>
+    <a href="#" data-pretraga="${esc(s.id)}">${esc(s.opis.slice(0, 120))}${s.opis.length > 120 ? '…' : ''}</a>
+    <span class="meta">${esc(new Date(s.datum).toLocaleString('hr-HR'))} · ${s.rezultat?.odluke?.length ?? 0} odluka${s.rezultat?.trosak ? ` · ${usd(s.rezultat.trosak.usd)}` : ''}</span>
+    <button type="button" class="link-btn" data-obrisi="${esc(s.id)}">obriši</button></li>`).join('') || '<li class="meta">Još nema pretraga.</li>';
 }
+
+function openDrawer(id) {
+  for (const d of document.querySelectorAll('.drawer')) d.hidden = d.id !== id || !d.hidden;
+}
+$('#otvori-spremljeno').addEventListener('click', () => { openDrawer('ladica'); renderDrawer(); });
+$('#otvori-postavke').addEventListener('click', async () => {
+  openDrawer('postavke');
+  if (!$('#postavke').hidden && state.uloga === 'admin') await loadPostavke().catch(showError);
+});
+
+// ---------- administracija korisnika ----------
+
+const STATUS_LABEL = { ceka: 'čeka odobrenje', odobren: 'odobren', odbijen: 'odbijen', blokiran: 'blokiran' };
+const ACTIONS = {
+  ceka: [['odobri', 'Odobri'], ['odbij', 'Odbij']],
+  odobren: [['blokiraj', 'Blokiraj']],
+  odbijen: [['odobri', 'Ipak odobri'], ['obrisi', 'Obriši']],
+  blokiran: [['deblokiraj', 'Deblokiraj'], ['obrisi', 'Obriši']],
+};
+const fmtDate = (s) => (s ? new Date(s).toLocaleDateString('hr-HR') : '—');
+
+async function loadKorisnici() {
+  const list = await api('/api/admin/korisnici');
+  const order = { ceka: 0, odobren: 1, blokiran: 2, odbijen: 3 };
+  list.sort((a, b) => (a.uloga === 'admin' ? -1 : b.uloga === 'admin' ? 1 : order[a.status] - order[b.status]));
+  const pending = list.filter((u) => u.status === 'ceka').length;
+  $('#broj-cekanje').textContent = pending || '';
+  $('#popis-korisnika').innerHTML = list.map((u) => `<div class="user-row ${u.status === 'ceka' ? 'pending' : ''}">
+    <div><strong>${esc(u.ime || u.email)}</strong> ${u.uloga === 'admin' ? '<span class="badge">administrator</span>' : `<span class="badge ${u.status === 'odobren' ? 'da' : u.status === 'ceka' ? 'djelomično' : 'ne'}">${esc(STATUS_LABEL[u.status])}</span>`}</div>
+    <div class="meta">${esc(u.email)} · registriran ${fmtDate(u.stvoreno)} · zadnja prijava ${fmtDate(u.zadnjaPrijava)}</div>
+    <div class="meta">Ovaj mjesec: ${u.ovajMjesec.pretrage} pretraga · ${usd(u.ovajMjesec.usd)}</div>
+    ${u.uloga === 'admin' ? '' : `<div class="row">${(ACTIONS[u.status] ?? []).map(([a, l]) => `<button type="button" class="${a === 'odobri' ? '' : 'secondary'}" data-korisnik="${esc(u.id)}" data-akcija="${a}">${l}</button>`).join('')}</div>`}
+  </div>`).join('');
+}
+
+$('#otvori-korisnike').addEventListener('click', async () => {
+  openDrawer('korisnici');
+  if (!$('#korisnici').hidden) await loadKorisnici().catch(showError);
+});
+
+$('#popis-korisnika').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-akcija]');
+  if (!b) return;
+  if (b.dataset.akcija === 'obrisi' && !confirm('Obrisati korisnika i sve njegove predmete? Ovo se ne može poništiti.')) return;
+  b.disabled = true;
+  try {
+    await api(`/api/admin/korisnici/${b.dataset.korisnik}`, { method: 'POST', body: { akcija: b.dataset.akcija } });
+    await loadKorisnici();
+  } catch (err) { showError(err); b.disabled = false; }
+});
+for (const b of document.querySelectorAll('[data-zatvori]')) b.addEventListener('click', () => { b.closest('.drawer').hidden = true; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') for (const d of document.querySelectorAll('.drawer')) d.hidden = true; });
 
 $('#predmet').addEventListener('change', (e) => selectPredmet(e.target.value).catch(showError));
-
-// Unos naziva u obrascu (window.prompt nije dostupan u Windows aplikaciji).
-$('#novi-predmet').addEventListener('click', () => {
-  $('#novi-predmet-forma').hidden = false;
-  $('#novi-predmet-naziv').focus();
-});
-$('#novi-predmet-odustani').addEventListener('click', () => { $('#novi-predmet-forma').hidden = true; });
+$('#novi-predmet').addEventListener('click', () => { $('#novi-predmet-forma').hidden = false; $('#novi-predmet-naziv').focus(); });
 $('#novi-predmet-forma').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
@@ -86,6 +385,38 @@ $('#novi-predmet-forma').addEventListener('submit', async (e) => {
     $('#novi-predmet-forma').hidden = true;
     await loadPredmeti(p.id);
   } catch (err) { showError(err); }
+});
+$('#izvoz').addEventListener('click', () => { if (state.predmetId) window.location.href = `/api/predmeti/${state.predmetId}/izvoz`; });
+
+const noteTimers = {};
+$('#ladica').addEventListener('input', (e) => {
+  const ta = e.target.closest('textarea[data-biljeska]');
+  if (!ta) return;
+  const url = ta.dataset.biljeska;
+  const st = ta.parentElement.querySelector('.save-state');
+  st.textContent = 'sprema se…';
+  clearTimeout(noteTimers[url]);
+  noteTimers[url] = setTimeout(() => api(`/api/predmeti/${state.predmetId}/odluke`, { method: 'POST', body: { url, biljeska: ta.value } })
+    .then((o) => { state.predmet.odluke[url] = o; st.textContent = 'spremljeno'; })
+    .catch((err) => { st.textContent = `greška: ${err.message}`; }), 700);
+});
+$('#ladica').addEventListener('click', async (e) => {
+  const open = e.target.closest('[data-pretraga]');
+  const del = e.target.closest('[data-obrisi]');
+  const rm = e.target.closest('[data-ukloni]');
+  if (open) {
+    e.preventDefault();
+    const s = state.predmet.pretrage.find((x) => x.id === open.dataset.pretraga);
+    $('#status').hidden = true;
+    render(s.rezultat, s);
+    $('#ladica').hidden = true;
+    window.scrollTo({ top: 0 });
+  } else if (del && confirm('Obrisati ovu pretragu iz povijesti? Spremljene odluke i bilješke ostaju.')) {
+    await api(`/api/predmeti/${state.predmetId}/pretrage/${del.dataset.obrisi}`, { method: 'DELETE' }).catch(showError);
+    await selectPredmet(state.predmetId);
+  } else if (rm) {
+    await toggleSaved(rm.dataset.ukloni).catch(showError);
+  }
 });
 
 // ---------- postavke i odjava ----------
@@ -113,12 +444,6 @@ $('#osvjezi-cjenik').addEventListener('click', async () => {
   $('#osvjezi-cjenik').disabled = false;
 });
 
-$('#otvori-postavke').addEventListener('click', async () => {
-  const sec = $('#postavke');
-  sec.hidden = !sec.hidden;
-  if (!sec.hidden) await loadPostavke().catch(showError);
-});
-
 $('#postavke-forma').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
@@ -142,266 +467,25 @@ $('#odjava').addEventListener('click', async () => {
   location.href = '/prijava.html';
 });
 
-$('#pretrage-lista').addEventListener('click', async (e) => {
-  const open = e.target.closest('[data-pretraga]');
-  const del = e.target.closest('[data-obrisi]');
-  if (open) {
-    e.preventDefault();
-    const s = state.predmet.pretrage.find((x) => x.id === open.dataset.pretraga);
-    $('#opis').value = s.opis;
-    $('#stajaliste').value = s.stajaliste ?? '';
-    render(s.rezultat, s);
-  } else if (del && confirm('Obrisati ovu spremljenu pretragu? Bilješke uz odluke ostaju.')) {
-    await api(`/api/predmeti/${state.predmet.id}/pretrage/${del.dataset.obrisi}`, { method: 'DELETE' }).catch(showError);
-    await selectPredmet(state.predmet.id);
-  }
-});
-
-$('#izvoz').addEventListener('click', () => {
-  if (state.predmet) window.location.href = `/api/predmeti/${state.predmet.id}/izvoz`;
-});
-
-// Bilješke i odabir za izvoz
-let noteTimers = {};
-async function saveOdluka(url, patch) {
-  if (!state.predmet) return;
-  const o = await api(`/api/predmeti/${state.predmet.id}/odluke`, { method: 'POST', body: { url, ...patch } });
-  state.predmet.odluke[url] = o;
-  renderPredmet();
-}
-
-$('#odluke').addEventListener('change', (e) => {
-  const cb = e.target.closest('input[data-izvoz]');
-  if (cb) saveOdluka(cb.dataset.izvoz, { odabrano: cb.checked }).catch(showError);
-});
-$('#odluke').addEventListener('input', (e) => {
-  const ta = e.target.closest('textarea[data-biljeska]');
-  if (!ta) return;
-  const url = ta.dataset.biljeska;
-  clearTimeout(noteTimers[url]);
-  ta.nextElementSibling.textContent = 'sprema se…';
-  noteTimers[url] = setTimeout(() => saveOdluka(url, { biljeska: ta.value })
-    .then(() => { ta.nextElementSibling.textContent = 'spremljeno'; })
-    .catch((err) => { ta.nextElementSibling.textContent = `greška: ${err.message}`; }), 700);
-});
-
-// ---------- anonimizacija ----------
-
-async function refreshAnon() {
-  state.anon = await api('/api/anonimizacija', {
-    method: 'POST',
-    body: { opis: $('#opis').value, stajaliste: $('#stajaliste').value, dodatni: state.dodatni, iskljuceno: state.iskljuceno, ukljuceno: state.ukljuceno },
-  });
-  const a = state.anon;
-  $('#stavke').innerHTML = a.stavke.length
-    ? a.stavke.map((s) => `<li><label><input type="checkbox" data-oznaka="${esc(s.oznaka)}" ${s.ukljuceno ? 'checked' : ''}>
-        <code>${esc(s.oznaka)}</code> ← ${s.oblici.map((o) => `„${esc(o)}“`).join(', ')} <span class="meta">(${esc(s.tip)})</span></label></li>`).join('')
-    : '<li class="meta">Nije prepoznat nijedan osobni podatak. Provjerite tekst i po potrebi dodajte pojmove ručno.</li>';
-  $('#anon-opis').textContent = a.opis;
-  $('#anon-stajaliste').textContent = a.stajaliste;
-  $('#anon-stajaliste-wrap').hidden = !a.stajaliste;
-}
-
-$('#upit').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  state.dodatni = []; state.iskljuceno = []; state.ukljuceno = [];
-  try {
-    await refreshAnon();
-    $('#upit').hidden = true;
-    $('#pregled').hidden = false;
-    $('#pregled').scrollIntoView({ behavior: 'smooth' });
-  } catch (err) { showError(err); }
-});
-
-$('#stavke').addEventListener('change', (e) => {
-  const cb = e.target.closest('input[data-oznaka]');
-  if (!cb) return;
-  const o = cb.dataset.oznaka;
-  state.iskljuceno = state.iskljuceno.filter((x) => x !== o);
-  state.ukljuceno = state.ukljuceno.filter((x) => x !== o);
-  (cb.checked ? state.ukljuceno : state.iskljuceno).push(o);
-  refreshAnon().catch(showError);
-});
-
-function addTerm() {
-  const t = $('#dodatni').value.trim();
-  if (!t) return;
-  state.dodatni.push(t);
-  $('#dodatni').value = '';
-  refreshAnon().catch(showError);
-}
-$('#dodaj').addEventListener('click', addTerm);
-$('#dodatni').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm(); } });
-
-$('#natrag').addEventListener('click', () => {
-  $('#pregled').hidden = true;
-  $('#upit').hidden = false;
-});
-
-$('#posalji').addEventListener('click', async () => {
-  const btn = $('#posalji');
-  btn.disabled = true;
-  $('#pregled').hidden = true;
-  $('#upit').hidden = false;
-  $('#upit button[type=submit]').disabled = true;
-  $('#status').hidden = false;
-  $('#status').textContent = 'Šaljem upit…';
-  $('#odluke').innerHTML = '';
-  $('#sinteza').hidden = true;
-  $('#upozorenja').hidden = true;
-  const filters = Object.fromEntries([...document.querySelectorAll('#filteri input')].filter((i) => i.value).map((i) => [i.name, i.value]));
-  try {
-    const { id } = await api('/api/upit', {
-      method: 'POST',
-      body: { opis: state.anon.opis, stajaliste: state.anon.stajaliste, filters, predmetId: state.predmet?.id },
-    });
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const job = await api(`/api/upit/${id}`);
-      $('#status').textContent = job.napredak.at(-1)?.poruka ?? 'Radim…';
-      if (job.status === 'gotovo') {
-        $('#status').hidden = true;
-        if (job.predmetId && state.predmet?.id === job.predmetId) {
-          state.predmet = await api(`/api/predmeti/${job.predmetId}`);
-          renderPredmet();
-        }
-        render(job.rezultat);
-        break;
-      }
-      if (job.status === 'greška') throw new Error(job.greska);
-    }
-  } catch (err) {
-    showError(err);
-  } finally {
-    btn.disabled = false;
-    $('#upit button[type=submit]').disabled = false;
-  }
-});
-
-function showError(err) {
-  $('#status').hidden = false;
-  $('#status').textContent = `Greška: ${err.message}`;
-}
-
-// ---------- prikaz rezultata ----------
-
-function renderEu(d) {
-  const rows = d.euReference.map((r) => {
-    const st = r.provjera ? ` <span class="meta">(${esc(r.provjera)})</span>` : '';
-    return `<li>${r.url ? link(r.url, r.oznaka) : esc(r.oznaka)}${r.celex ? ` <span class="meta">CELEX ${esc(r.celex)}</span>` : ''}${st}</li>`;
-  });
-  const hyp = d.analiza.moguce_eu_poveznice.map((h) =>
-    `<li class="hyp">${esc(h.akt)} – ${esc(h.obrazlozenje)} <span class="meta">(pretpostavka modela, nije navedeno u odluci)</span></li>`);
-  if (d.ekljp) rows.push('<li>Odluka se poziva na EKLJP / Europski sud za ljudska prava (Vijeće Europe, nije pravo EU)</li>');
-  if (!rows.length && !hyp.length) return '<p class="meta">Nema poveznica s pravom EU.</p>';
-  return `<ul>${rows.join('')}${hyp.join('')}</ul>`;
-}
-
-function weightBadges(d) {
-  const t = d.tezina ?? {};
-  const a = d.analiza;
-  const out = [];
-  if (t.razinaOznaka) out.push(`<span class="badge">${esc(t.razinaOznaka)}</span>`);
-  if (t.pravomocna === true) out.push('<span class="badge">pravomoćna</span>');
-  if (t.pravomocna === false) out.push('<span class="badge djelomično">nije pravomoćna</span>');
-  if (t.stara) out.push(`<span class="badge djelomično" title="Propisi i praksa su se mogli promijeniti">${t.godina}. – stara ${t.starost} god.</span>`);
-  else if (t.godina) out.push(`<span class="badge">${t.godina}.</span>`);
-  if (a.primjenjivost?.upozorenje) out.push('<span class="badge ne">provjerite primjenjivost</span>');
-  return out.join('');
-}
-
-function renderDecision(d, hasStance) {
-  const a = d.analiza;
-  const m = d.meta ?? {};
-  const naslov = m.poslovniBroj ?? d.naslov;
-  const citat = a.citat
-    ? `<blockquote>„${esc(a.citat)}“</blockquote><p class="meta">${d.citatProvjeren ? '✔ citat pronađen u tekstu odluke' : '⚠ citat NIJE pronađen doslovno u tekstu – provjerite izvornik'}</p>`
-    : '';
-  const povezani = [
-    ...d.povezaniURezultatima.map((r) => `<li>${link(r.url, r.poslovniBroj)} – ${esc(r.odnos)}</li>`),
-    ...d.citiraniPredmeti.map((c) => `<li>${esc(c)} <span class="meta">(citiran u odluci)</span></li>`),
-  ];
-  const smjer = a.smjer && a.smjer !== 'neutralno' && hasStance
-    ? `<span class="badge ${esc(SMJER[a.smjer]?.[1])}">${esc(a.smjer)}</span>` : '';
-  const o = state.predmet?.odluke[d.url] ?? { biljeska: '', odabrano: false };
-  const predmetBlock = state.predmet ? `<div class="biljeska">
-      <label><input type="checkbox" data-izvoz="${esc(d.url)}" ${o.odabrano ? 'checked' : ''}> uključi u izvoz</label>
-      <textarea data-biljeska="${esc(d.url)}" rows="2" placeholder="Bilješka uz odluku (sprema se automatski)">${esc(o.biljeska)}</textarea><span class="meta"></span>
-    </div>` : '';
-  return `<article class="card">
-    <h3>${link(d.url, naslov)}</h3>
-    <div class="meta">${esc([m.sud, m.datum, m.vrsta, m.ecli, d.izvor].filter(Boolean).join(' · '))}</div>
-    <p>${smjer}<span class="badge ${esc(a.podudaranje)}">podudaranje: ${esc(a.podudaranje)}</span><span class="badge">relevantnost ${a.relevantnost}/100</span>
-      ${weightBadges(d)}${d.skraceno ? '<span class="badge ne">tekst skraćen za analizu</span>' : ''}</p>
-    <p>${esc(a.objasnjenje)}</p>
-    ${citat}
-    <dl>
-      ${hasStance && a.smjer_obrazlozenje ? `<dt>Odnos prema našem stajalištu</dt><dd>${esc(a.smjer_obrazlozenje)}</dd>` : ''}
-      ${a.kako_iskoristiti ? `<dt>${a.smjer === 'protiv' ? 'Kako se suprotstaviti' : 'Kako iskoristiti'}</dt><dd>${esc(a.kako_iskoristiti)}</dd>` : ''}
-      ${a.primjenjivost?.upozorenje ? `<dt>Primjenjivost danas <span class="meta">(procjena modela)</span></dt><dd class="hyp">${esc(a.primjenjivost.razlog)}</dd>` : ''}
-      <dt>Činjenice</dt><dd>${esc(a.cinjenice_predmeta)}</dd>
-      <dt>Ishod</dt><dd>${esc(a.ishod)}</dd>
-      <dt>Pravno shvaćanje</dt><dd>${esc(a.pravno_shvacanje)}</dd>
-      <dt>Zašto je važno</dt><dd>${esc(a.zasto_je_vazno)}</dd>
-      <dt>Primijenjeni propisi</dt><dd>${esc(a.primijenjeni_propisi.join('; ') || '—')}</dd>
-    </dl>
-    <details><summary>Povezani predmeti (${povezani.length})</summary><ul>${povezani.join('') || '<li>—</li>'}</ul></details>
-    <details><summary>Veza s pravom EU</summary>${renderEu(d)}</details>
-    <p class="meta">Pronađeno upitima: ${esc(d.upiti.join(' | '))}</p>
-    ${predmetBlock}
-  </article>`;
-}
-
-// Viši sud i veća relevantnost prvo.
-const byWeight = (a, b) => b.analiza.relevantnost - a.analiza.relevantnost || (a.tezina?.razina ?? 9) - (b.tezina?.razina ?? 9);
-
-function render(r, saved) {
-  state.rezultat = r;
-  const s = r.sinteza;
-  const hasStance = Boolean(r.stajaliste);
-  $('#sinteza').hidden = !s;
-  if (s) {
-    $('#sinteza').innerHTML = `<div class="card"><h2>Sinteza prakse</h2>
-      ${saved ? `<p class="meta">Spremljena pretraga od ${esc(new Date(saved.datum).toLocaleString('hr-HR'))}</p>` : ''}
-      ${r.trosak ? `<p class="meta trosak">Procijenjeni trošak pretrage: <strong>${usd(r.trosak.usd)}</strong>
-        (${r.trosak.pozivi} poziva modela, ${r.trosak.ulazniTokeni.toLocaleString('hr-HR')} ulaznih i ${r.trosak.izlazniTokeni.toLocaleString('hr-HR')} izlaznih tokena)</p>` : ''}
-      <p>${esc(s.pregled)}</p>
-      <dl>
-      ${s.argumenti_u_prilog ? `<dt>Argumenti u prilog našem stajalištu</dt><dd>${esc(s.argumenti_u_prilog)}</dd>` : ''}
-      ${s.argumenti_protiv_i_odgovor ? `<dt>Argumenti protiv i kako im se suprotstaviti</dt><dd>${esc(s.argumenti_protiv_i_odgovor)}</dd>` : ''}
-      <dt>Prevladavajuće stajalište</dt><dd>${esc(s.prevladavajuce_stajaliste)}</dd>
-      ${s.razlike_u_praksi ? `<dt>Razlike u praksi</dt><dd>${esc(s.razlike_u_praksi)}</dd>` : ''}
-      <dt>Veza s pravom EU</dt><dd>${esc(s.veza_s_pravom_eu)}</dd>
-      <dt>Za daljnje istraživanje</dt><dd><ul>${s.preporuke_za_daljnje_istrazivanje.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></dd></dl>
-      <details><summary>Razrada i poslani tekst</summary><p>${esc(r.plan.sazetak_problema)}</p>
-      <p class="meta">Upiti: ${esc(r.plan.upiti.join(' | '))}</p>
-      <p class="meta">Poslani opis: ${esc(r.opis)}</p>${hasStance ? `<p class="meta">Poslano stajalište: ${esc(r.stajaliste)}</p>` : ''}</details></div>`;
-  }
-  if (!r.odluke.length) {
-    $('#odluke').innerHTML = '<p>Nije pronađena nijedna odluka.</p>';
-  } else if (hasStance) {
-    $('#odluke').innerHTML = `<h2>Odluke (${r.odluke.length})</h2>` + Object.entries(SMJER).map(([key, [title]]) => {
-      const group = r.odluke.filter((d) => (d.analiza.smjer ?? 'neutralno') === key).sort(byWeight);
-      return group.length ? `<h3 class="group">${esc(title)} (${group.length})</h3>${group.map((d) => renderDecision(d, true)).join('')}` : '';
-    }).join('');
-  } else {
-    $('#odluke').innerHTML = `<h2>Odluke (${r.odluke.length})</h2>` + [...r.odluke].sort(byWeight).map((d) => renderDecision(d, false)).join('');
-  }
-  $('#upozorenja').hidden = !r.upozorenja.length;
-  $('#upozorenja').innerHTML = `<details><summary>Upozorenja (${r.upozorenja.length})</summary><ul>${r.upozorenja.map((u) => `<li>${esc(u)}</li>`).join('')}</ul></details>`;
-}
-
 async function init() {
   const info = await api('/api/info');
-  $('#korisnik').textContent = `Prijavljeni: ${info.korisnik}`;
-  if (!info.imaKljuc) {
-    $('#postavke').hidden = false;
-    await loadPostavke();
-    $('#postavke-poruka').textContent = 'Upišite Anthropic API ključ kako bi pretraga radila.';
-  }
+  state.uloga = info.uloga;
+  const isAdmin = info.uloga === 'admin';
+  $('#korisnik').textContent = `Prijavljeni: ${info.ime ? `${info.ime} (${info.korisnik})` : info.korisnik}${isAdmin ? ' · administrator' : ''}`;
+  $('#admin-postavke').hidden = !isAdmin;
+  $('#otvori-korisnike').hidden = !isAdmin;
+  $('#broj-cekanje').textContent = info.naCekanju || '';
   $('#filteri').innerHTML = info.filteri.map((f) =>
     `<label>${esc(FILTER_LABELS[f] ?? f)} <input name="${esc(f)}" type="date"></label>`).join('');
   await loadPredmeti();
+  if (!info.imaKljuc && isAdmin) {
+    openDrawer('postavke');
+    await loadPostavke();
+    $('#postavke-poruka').textContent = 'Upišite Anthropic API ključ kako bi pretraga radila.';
+  } else if (!info.imaKljuc) {
+    showError(new Error('Pretraga trenutačno nije dostupna: administrator još nije postavio API ključ.'));
+  }
+  opis.focus();
 }
 
 init().catch(showError);

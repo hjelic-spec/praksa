@@ -7,13 +7,14 @@ import path from 'node:path';
 
 const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'praksa-'));
 process.env.PRAKSA_PREDMETI_DIR = tmp;
-const store = await import('../src/store.js');
+const storeMod = await import('../src/store.js');
+const store = { ...storeMod.forUser('korisnik1'), selectedDecisions: storeMod.selectedDecisions, DEFAULT_NAZIV: storeMod.DEFAULT_NAZIV };
 const { buildDocx, citationLine } = await import('../src/export.js');
 const { weigh } = await import('../src/authority.js');
 
 const odluka = (url, smjer, meta) => ({
   url, naslov: url, meta, tezina: weigh(meta, new Date('2026-10-14')), citatProvjeren: true,
-  analiza: { relevantnost: 80, smjer, citat: 'doslovni citat', pravno_shvacanje: 'shvaćanje', ishod: 'ishod', smjer_obrazlozenje: 'zato', kako_iskoristiti: 'ovako', primjenjivost: { upozorenje: false, razlog: '' } },
+  analiza: { relevantnost: 80, smjer, citati: [{ tekst: 'doslovni citat', znacaj: 'shvaćanje', provjeren: true }], pravno_shvacanje: 'shvaćanje', pravno_pitanje: 'pitanje', bitne_cinjenice: 'činjenice', razlike_od_upita: 'razlika', ishod: 'ishod', primijenjeni_propisi: ['čl. 240. ZKP'], kako_iskoristiti: 'ovako', primjenjivost: { upozorenje: false, razlog: '' } },
 });
 
 test('težina odluke iz metapodataka', () => {
@@ -69,4 +70,21 @@ test('trošak pretrage iz usage', async () => {
   assert.deepEqual([t.summary.pozivi, t.summary.ulazniTokeni, t.summary.izlazniTokeni], [3, 20_005, 3_000]);
   assert.equal(t.summary.usd, 0.04 + 0.04 + 0.05 + 0.025);
   assert.deepEqual(t.summary.nepoznatiModeli, ['nepoznat-model']);
+});
+
+test('zadani predmet nastaje jednom i koristi se dalje', async () => {
+  const [a, b] = await Promise.all([store.ensureDefaultPredmet(), store.ensureDefaultPredmet()]);
+  assert.equal(a.id, b.id);
+  assert.equal((await store.ensureDefaultPredmet()).id, a.id);
+  assert.equal(a.naziv, store.DEFAULT_NAZIV);
+  assert.ok((await store.listPredmeti()).find((p) => p.id === a.id).zadani);
+});
+
+test('izvoz prihvaća i stariji oblik spremljene analize (jedan citat)', async () => {
+  const { quotesOf } = await import('../src/export.js');
+  assert.deepEqual(quotesOf({ citatProvjeren: true, analiza: { citat: 'stari citat' } }), [{ tekst: 'stari citat', znacaj: '', provjeren: true }]);
+  const p = { naziv: 'stari' };
+  const buf = await buildDocx(p, [{ url: 'https://x/9', meta: { poslovniBroj: 'Rev-1/2019' }, citatProvjeren: true,
+    analiza: { relevantnost: 60, smjer: 'neutralno', citat: 'stari citat', pravno_shvacanje: 'shvaćanje', cinjenice_predmeta: 'stare činjenice' } }]);
+  assert.equal(buf.subarray(0, 2).toString(), 'PK');
 });

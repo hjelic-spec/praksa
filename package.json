@@ -4,12 +4,14 @@
   "description": "Preglednik sudske prakse hrvatskih sudova s AI analizom (odluke.sudovi.hr)",
   "scripts": {
     "start": "node src/server.js",
+    "web": "node scripts/web.js",
     "app": "electron .",
     "postavi-prijavu": "node scripts/postavi-prijavu.js",
     "predist": "node scripts/postavi-prijavu.js --provjeri",
     "dist": "electron-builder --win nsis",
     "test": "node --test",
-    "probe": "node scripts/probe-odluke.js"
+    "probe": "node scripts/probe-odluke.js",
+    "nova-lozinka": "node scripts/nova-lozinka.js"
   },
   "repository": {
     "type": "git",
