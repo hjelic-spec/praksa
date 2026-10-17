@@ -1,0 +1,23 @@
+{
+  "_napomena": "Konfiguracija za odluke.sudovi.hr. Oblik poveznice na odluku (/Document/View?id=<GUID>) potvrđen je iz javno indeksiranih URL-ova; obrazac za pretraživanje, paginacija i raspored teksta odluke NISU provjereni (pristup stranici bio je blokiran iz razvojnog okruženja). Pokrenite `npm run probe` na računalu s pristupom stranici i prema ispisu po potrebi popunite polja s vrijednošću null.",
+  "baseUrl": "https://odluke.sudovi.hr",
+  "searchPagePath": "/Document/AdvancedSearch",
+  "search": {
+    "mode": "auto-form",
+    "template": null,
+    "queryField": null,
+    "extraParams": {},
+    "filterFields": {
+      "datumOd": null,
+      "datumDo": null
+    }
+  },
+  "results": {
+    "linkPattern": "/Document/View\\?id=[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}",
+    "nextPageSelector": null,
+    "maxPages": 2
+  },
+  "decision": {
+    "textSelector": null
+  }
+}

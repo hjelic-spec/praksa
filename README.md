@@ -86,6 +86,39 @@ Duge odluke znače mnogo ulaznih tokena; prije veće upotrebe izmjerite potrošn
 Za zahtjeve odbijene od sigurnosnih klasifikatora uključen je poslužiteljski `fallbacks: "default"`
 (beta `server-side-fallback-2026-07-01`) – zahtjev se tada automatski ponovi na preporučenom zamjenskom modelu.
 
+## Skill za Claude (`skill/sudska-praksa`)
+
+Isti posao kao web aplikacija, ali unutar Claudea: Claude razrađuje opis, čita i ocjenjuje odluke i piše
+sintezu, a skripta `scripts/praksa.mjs` radi pretraživanje, dohvat, regex ekstrakciju, provjeru citata
+i povezivanje predmeta. Troši se kvota korisnikove Claude pretplate, ne API ključ; nema poslužitelja.
+
+Skripta je jedna datoteka (cheerio je zapakiran unutra), treba joj samo Node.js 20+.
+Izvor je `skill/praksa-cli.js`; nakon izmjena u njemu ili u `src/` pokrenite `npm run skill:build`
+(test `npm test` javlja grešku ako zapakirana skripta nije osvježena).
+
+**Instalacija za Claude Code** (osobni skill, vrijedi u svim projektima):
+
+```powershell
+# Windows (PowerShell), iz mape repozitorija
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills" | Out-Null
+Copy-Item -Recurse skill\sudska-praksa "$env:USERPROFILE\.claude\skills\sudska-praksa"
+```
+
+```bash
+# Linux / macOS
+mkdir -p ~/.claude/skills && cp -r skill/sudska-praksa ~/.claude/skills/
+```
+
+Zatim u Claude Codeu npr. „Nađi sudsku praksu: putnik je ozlijeđen kad je autobus naglo zakočio.”
+
+Ograničenja koja treba znati:
+- skripta dohvaća odluke s računala na kojem radi; u Claude Codeu ili Coworku na vlastitom računalu to je
+  vaša mreža. U pregledniku na claude.ai skripte se izvode u Anthropicovu okruženju čiji je mrežni pristup
+  ograničen, pa nije provjereno može li tamo doći do odluke.sudovi.hr;
+- struktura stranice odluke.sudovi.hr i dalje nije provjerena (vidi gore); `odluke.config.json` se pri
+  izgradnji kopira u skill, pa nakon izmjene konfiguracije ponovno pokrenite `npm run skill:build`;
+- dosljednost ovisi o tome koliko Claude slijedi upute iz `SKILL.md`; ono što je provjerljivo radi skripta.
+
 ## Lokalna zbirka
 
 Odluke spremljene kao `.txt`, `.md` ili `.html` u `data/corpus/` pretražuju se zajedno s online izvorom
@@ -101,6 +134,10 @@ src/extract.js           regex ekstrakcija: poslovni brojevi, ECLI, EU akti → 
 src/eu.js                provjera CELEX-a u CELLAR SPARQL endpointu
 src/sources/odluke.js    adapter za odluke.sudovi.hr (+ odluke.config.json)
 src/sources/local.js     lokalna zbirka
+src/related.js           povezivanje predmeta (zajedničko aplikaciji i skillu)
 scripts/probe-odluke.js  ispitivanje stvarne strukture stranice
+scripts/build-skill.js   pakiranje skilla (npm run skill:build)
+skill/praksa-cli.js      naredbe skilla (izvor)
+skill/sudska-praksa/     skill: SKILL.md + zapakirana skripta
 public/                  sučelje
 ```

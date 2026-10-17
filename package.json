@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test",
-    "probe": "node scripts/probe-odluke.js"
+    "probe": "node scripts/probe-odluke.js",
+    "skill:build": "node scripts/build-skill.js"
   },
   "repository": {
     "type": "git",
@@ -25,5 +26,8 @@
   "type": "module",
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

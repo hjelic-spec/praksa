@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function readJson(file) {
-  return JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+  return JSON.parse(fs.readFileSync(path.resolve(root, file), 'utf8'));
 }
+
+let odlukeConfig;
 
 export const config = {
   root,
@@ -19,10 +21,14 @@ export const config = {
   analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 3),
   minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 1500),
   userAgent: process.env.PRAKSA_USER_AGENT ?? 'praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)',
-  cacheDir: path.join(root, 'data', 'cache'),
+  // PRAKSA_CACHE_DIR koristi skill (predmemorija izvan mape skilla); čita se pri svakoj upotrebi.
+  get cacheDir() { return process.env.PRAKSA_CACHE_DIR ?? path.join(root, 'data', 'cache'); },
   corpusDir: path.join(root, 'data', 'corpus'),
   // Izvori: "odluke" (odluke.sudovi.hr), "local" (data/corpus). Npr. PRAKSA_SOURCES=local
   sources: (process.env.PRAKSA_SOURCES ?? 'odluke,local').split(',').map((s) => s.trim()).filter(Boolean),
   get verifyEuViaSparql() { return process.env.PRAKSA_VERIFY_EU !== '0'; },
-  odluke: readJson('src/sources/odluke.config.json'),
+  // Čita se tek pri prvoj upotrebi, pa PRAKSA_ODLUKE_CONFIG može postaviti i skill na početku izvođenja.
+  get odluke() {
+    return (odlukeConfig ??= readJson(process.env.PRAKSA_ODLUKE_CONFIG ?? 'src/sources/odluke.config.json'));
+  },
 };
