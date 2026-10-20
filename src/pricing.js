@@ -134,10 +134,12 @@ export function costOf(model, usage = {}) {
 
 // Zbraja potrošnju svih poziva jedne pretrage; uz rezultat se sprema i datum korištenog cjenika.
 export function createCostTracker() {
-  const t = { pozivi: 0, ulazniTokeni: 0, izlazniTokeni: 0, usd: 0, nepoznatiModeli: [], cjenik: state.dohvaceno ?? state.izvor };
+  // modeli: koji su modeli stvarno odgovorili (uz zamjenski model ili promjenu u Postavkama može ih biti više).
+  const t = { pozivi: 0, ulazniTokeni: 0, izlazniTokeni: 0, usd: 0, modeli: [], nepoznatiModeli: [], cjenik: state.dohvaceno ?? state.izvor };
   return {
     add(model, usage = {}) {
       t.pozivi++;
+      if (model && !t.modeli.includes(model)) t.modeli.push(model);
       t.ulazniTokeni += (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
       t.izlazniTokeni += usage.output_tokens ?? 0;
       const c = costOf(model, usage);

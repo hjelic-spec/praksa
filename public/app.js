@@ -214,7 +214,7 @@ function render(r, saved) {
   const status = [
     r.pregledano ? `pregledano ${r.pregledano} odluka` : null,
     `prikazano ${glavne.length} relevantnih`,
-    r.trosak ? `trošak ${usd(r.trosak.usd)}` : null,
+    r.trosak ? `trošak ${usd(r.trosak.usd)}${r.trosak.modeli?.length ? ` (${r.trosak.modeli.join(', ')})` : ''}` : null,
     saved ? `spremljena pretraga od ${new Date(saved.datum).toLocaleString('hr-HR')}` : null,
   ].filter(Boolean).join(' · ');
   const filt = r.primijenjeniFilteri && Object.keys(r.primijenjeniFilteri).length
@@ -442,10 +442,22 @@ $('#ladica').addEventListener('click', async (e) => {
 async function loadPostavke() {
   const s = await api('/api/postavke');
   $('#kljuc-stanje').textContent = s.imaKljuc ? `Ključ je postavljen (završava s …${s.kljucZavrsava}).` : 'Ključ NIJE postavljen – pretraga neće raditi.';
+  renderModeli(s);
   $('#max-odluka').value = s.maxOdluka;
   $('#kontakt').value = s.kontakt;
   renderCjenik(await api('/api/cjenik'));
   return s;
+}
+
+const cijenaModela = (p) => (p ? `$${p.ulaz} ulaz / $${p.izlaz} izlaz po MTok` : 'cijena nije u cjeniku');
+
+function renderModeli(s) {
+  const sel = $('#model');
+  sel.innerHTML = s.modeli.map((m) => `<option value="${esc(m.id)}">${esc(m.naziv)} – ${esc(cijenaModela(m.cijena))}</option>`).join('');
+  sel.value = s.model;
+  const opis = () => { $('#model-opis').textContent = s.modeli.find((m) => m.id === sel.value)?.opis ?? ''; };
+  sel.onchange = opis;
+  opis();
 }
 
 function renderCjenik(c) {
@@ -465,7 +477,7 @@ $('#osvjezi-cjenik').addEventListener('click', async () => {
 $('#postavke-forma').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await api('/api/postavke', { method: 'POST', body: { apiKey: $('#api-kljuc').value.trim(), maxOdluka: $('#max-odluka').value, kontakt: $('#kontakt').value } });
+    await api('/api/postavke', { method: 'POST', body: { apiKey: $('#api-kljuc').value.trim(), model: $('#model').value, maxOdluka: $('#max-odluka').value, kontakt: $('#kontakt').value } });
     $('#api-kljuc').value = '';
     await loadPostavke();
     $('#postavke-poruka').textContent = 'Postavke su spremljene.';

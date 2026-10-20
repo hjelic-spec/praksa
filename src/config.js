@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_MODEL } from './models.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Podaci (predmeti, prijava, postavke, međuspremnik stranica). U Windows aplikaciji to je
@@ -21,7 +22,8 @@ function readJson(file) {
 export const config = {
   root,
   port: Number(process.env.PORT ?? 3000),
-  model: process.env.PRAKSA_MODEL ?? 'claude-opus-5-5',
+  // Model se bira u Postavkama (src/settings.js); PRAKSA_MODEL vrijedi dok se ondje ne odabere drugi.
+  model: process.env.PRAKSA_MODEL ?? DEFAULT_MODEL,
   // Koliko odluka najviše dohvatiti i analizirati po upitu (svaka analiza je jedan API poziv).
   maxDecisions: Number(process.env.PRAKSA_MAX_DECISIONS ?? 8),
   // Koliko kandidata (iz rezultata tražilice) model pregleda po isječcima prije odabira za analizu.

@@ -126,7 +126,7 @@ Postavke (varijable okruženja):
 
 | Varijabla | Zadano | Značenje |
 |---|---|---|
-| `PRAKSA_MODEL` | `claude-opus-5-5` | model |
+| `PRAKSA_MODEL` | `claude-opus-5-5` | zadani model; administrator ga mijenja u Postavkama (izbor ima prednost) |
 | `PRAKSA_MAX_DECISIONS` | 8 | odluka za detaljnu analizu po upitu (svaka = jedan API poziv) |
 | `PRAKSA_MAX_CANDIDATES` | 60 | kandidata za predselekciju po isječcima |
 | `PRAKSA_RESULTS_PER_QUERY` | 20 | rezultata tražilice po upitu (2 stranice) |
@@ -138,7 +138,10 @@ Postavke (varijable okruženja):
 | `PRAKSA_USER_AGENT` | … | upišite kontakt kako bi vas operater stranice mogao kontaktirati |
 
 Troškovi: jedan upit = 1 poziv za razumijevanje upita + 1 za predselekciju + do `PRAKSA_MAX_DECISIONS` poziva za analizu + 1 za odgovor.
-Duge odluke znače mnogo ulaznih tokena. Trošak svake pretrage prikazuje se u sučelju, a broj odluka mijenja se i u Postavkama.
+Duge odluke znače mnogo ulaznih tokena. Trošak svake pretrage prikazuje se u sučelju (uz model koji je odgovorio),
+a broj odluka i model mijenjaju se u Postavkama. Ponuđeni modeli (`src/models.js`): Claude Opus 5.5 (zadani),
+Sonnet 5.5 (upola jeftiniji), Haiku 5.5 (najjeftiniji, slabija analiza) i Fable 5.1 (najsposobniji, oko 2,5 puta skuplji).
+Kvaliteta analize na jeftinijim modelima nije izmjerena – usporedite rezultate na istim upitima prije prelaska.
 
 Cjenik se **osvježava automatski**: pri pokretanju (ako je stariji od jednog dana) i zatim svaki dan aplikacija dohvaća
 službenu tablicu cijena s `platform.claude.com/docs/en/about-claude/pricing.md`, provjerava je (dovoljno modela, uključen

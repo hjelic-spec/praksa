@@ -63,4 +63,13 @@ test('osvježavanje: novi cjenik se sprema i koristi; neuspjeh zadržava zadnji 
   assert.equal(pricing.costOf('claude-opus-5-5', { output_tokens: 1_000_000 }), 15);
 });
 
+test('trošak pretrage bilježi modele koji su stvarno odgovorili', () => {
+  const t = pricing.createCostTracker();
+  t.add('claude-opus-5-5', { input_tokens: 1000, output_tokens: 100 });
+  t.add('claude-opus-5-5', { input_tokens: 1000, output_tokens: 100 });
+  t.add('claude-sonnet-5-5', { input_tokens: 1000, output_tokens: 100 }); // npr. zamjenski model
+  assert.deepEqual(t.summary.modeli, ['claude-opus-5-5', 'claude-sonnet-5-5']);
+  assert.equal(t.summary.pozivi, 3);
+});
+
 test.after(() => fs.rm(tmp, { recursive: true, force: true }));
