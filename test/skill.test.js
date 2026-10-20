@@ -34,8 +34,12 @@ test('dohvati, citat i povezi na lokalnim datotekama', async () => {
   const pad = '.'.repeat(250);
   await fs.writeFile(path.join(dir, 'a.txt'), `Vrhovni sud Republike Hrvatske\nPoslovni broj: Rev 100/2020-2\n${pad}\n` +
     'Sud smatra da štrajk vlastitog osoblja prijevoznika nije izvanredna okolnost u smislu Uredbe (EZ) br. 261/2004. Vidi Gž-55/2019.\n');
-  await fs.writeFile(path.join(dir, 'b.html'), `<html><body><nav>Izbornik</nav><p>Županijski sud u Splitu</p>
-    <p>Poslovni broj: Gž-55/2019</p><p>${pad}</p><p>Vidi Rev-100/20.</p></body></html>`);
+  // Oblik stranice odluke kao u test/odluke.test.js (ploča metapodataka + .decision-text); sadržaj je izmišljen.
+  await fs.writeFile(path.join(dir, 'b.html'), `<html><body><nav>Izbornik</nav><div class="metadata">
+    <div class="metadata-item" data-metadata-type="decision-number"><p class="metadata-content">Gž-55/2019-3</p></div>
+    <div class="metadata-item" data-metadata-type="court"><p class="metadata-content">Županijski sud u Splitu</p></div>
+    <div class="metadata-item" data-metadata-type="decision-date"><p class="metadata-content">12.3.2020.</p></div></div>
+    <div class="decision-text"><p>${pad}</p><p>Vidi Rev-100/20.</p></div></body></html>`);
 
   const d = await cli(['dohvati', 'a.txt', 'b.html', 'nema.txt', '--dir', 'rad'], dir);
   assert.equal(d.odluke.length, 2);
@@ -45,18 +49,25 @@ test('dohvati, citat i povezi na lokalnim datotekama', async () => {
   assert.equal(a.meta.sud, 'Vrhovni sud Republike Hrvatske');
   assert.deepEqual(a.citiraniPredmeti, ['Gž-55/2019']);
   assert.ok(a.euReference.some((e) => e.celex === '32004R0261' && e.provjera === 'neprovjereno'));
-  assert.equal(b.meta.poslovniBroj, 'Gž-55/2019');
+  assert.equal(b.meta.poslovniBroj, 'Gž-55/2019-3', 'metapodaci s ploče odluke');
+  assert.equal(b.meta.sud, 'Županijski sud u Splitu');
+  assert.equal(b.meta.datum, '12.3.2020.');
   const tekstB = await fs.readFile(path.join(dir, b.datoteka), 'utf8');
-  assert.ok(!tekstB.includes('Izbornik'), 'navigacija je uklonjena iz HTML-a');
+  assert.ok(!tekstB.includes('Izbornik'), 'uzima se samo tekst odluke');
 
   assert.deepEqual(await cli(['citat', a.datoteka, 'štrajk vlastitog osoblja prijevoznika nije izvanredna okolnost'], dir), { provjeren: true });
   assert.deepEqual(await cli(['citat', a.datoteka, 'ova rečenica ne postoji u odluci'], dir), { provjeren: false });
 
   const veze = await cli(['povezi', '--dir', 'rad'], dir);
   const va = veze.find((v) => v.oznaka === 'Rev 100/2020-2');
-  const vb = veze.find((v) => v.oznaka === 'Gž-55/2019');
+  const vb = veze.find((v) => v.oznaka === 'Gž-55/2019-3');
   assert.ok(va.povezani.some((p) => p.url === b.url && p.odnos === 'citira'));
   assert.ok(vb.povezani.some((p) => p.url === a.url && p.odnos === 'citira'), 'Rev-100/20 = Rev 100/2020-2');
+});
+
+test('pretrazi odbija datum u pogrešnom obliku prije ikakvog zahtjeva', async () => {
+  await assert.rejects(run(process.execPath, [outFile, 'pretrazi', 'naknada štete', '--od', '1.3.2020.'], { env }),
+    (e) => e.code === 1 && /YYYY-MM-DD/.test(e.stderr));
 });
 
 test('pomoć i nepoznata naredba', async () => {

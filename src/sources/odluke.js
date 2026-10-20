@@ -1,7 +1,7 @@
 // Izvor: javna tražilica odluka sudova RH (https://odluke.sudovi.hr).
 //
-// VAŽNO: nazivi polja obrasca, oblik URL-ova rezultata i struktura stranice odluke
-// nisu provjereni iz okruženja u kojem je ovaj kod napisan. Zato adapter:
+// Struktura stranice provjerena je `npm run probe` (14.10.2026.) i upisana u
+// odluke.config.json. Ako se stranica promijeni, adapter se može vratiti na općenite načine:
 //   1) u načinu "auto-form" sam pročita obrazac s AdvancedSearch stranice (uključujući
 //      skrivena polja poput anti-forgery tokena) i upiše upit u tekstualno polje;
 //   2) rezultate prepoznaje heuristikom ako results.linkPattern nije zadan;
@@ -90,10 +90,25 @@ export function parseResults(html, pageUrl) {
     if (!isResultLink(raw, pageUrl)) return;
     const href = canonicalDecisionUrl(raw);
     if (seen.has(href)) return;
-    const row = $(a).closest('tr, li, article, .row, div');
+    // Kartica rezultata na odluke.sudovi.hr: cijela kartica je poveznica s poljima broja,
+    // suda, datuma, pravomoćnosti i isječka (potvrđeno `npm run probe`).
+    const $a = $(a);
+    const field = (sel) => normalizeWs($a.find(sel).first().text()) || null;
+    if ($a.find('.decision-number').length) {
+      seen.set(href, {
+        url: href,
+        naslov: field('.decision-number') ?? href,
+        sud: field('.decision-court'),
+        datum: field('.decision-date'),
+        pravomocnost: field('.final-decision'),
+        isjecak: (field('.result-snippet') ?? '').slice(0, 1200),
+      });
+      return;
+    }
+    const row = $a.closest('tr, li, article, .row, div');
     seen.set(href, {
       url: href,
-      naslov: normalizeWs($(a).text()) || href,
+      naslov: normalizeWs($a.text()) || href,
       isjecak: normalizeWs(row.text()).slice(0, 400),
     });
   });
@@ -109,12 +124,19 @@ export function supportedFilters() {
   return Object.keys(f).filter((k) => f[k]);
 }
 
+// Sučelje šalje datume kao YYYY-MM-DD (<input type="date">), a tražilica ih očekuje u
+// obliku D.M.YYYY. (format daterangepickera na stranici).
+export function siteDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? `${Number(m[3])}.${Number(m[2])}.${m[1]}.` : value;
+}
+
 export async function firstPage(query, filters) {
   const c = cfg();
   const searchPage = c.baseUrl + c.searchPagePath;
   const params = { ...c.search.extraParams };
   for (const [k, field] of Object.entries(c.search.filterFields)) {
-    if (field && filters?.[k]) params[field] = filters[k];
+    if (field && filters?.[k]) params[field] = siteDate(filters[k]);
   }
 
   if (c.search.mode === 'template') {
@@ -168,18 +190,41 @@ export function metadataFromText(text) {
   };
 }
 
+// Metapodaci s ploče odluke (.metadata-item[data-metadata-type]); pouzdaniji od teksta,
+// a ECLI se često nalazi samo ondje.
+export function metadataFromHtml(html) {
+  const $ = cheerio.load(html);
+  const get = (type) => normalizeWs($(`.metadata-item[data-metadata-type="${type}"] .metadata-content`).first().text()) || null;
+  return {
+    poslovniBroj: get('decision-number'),
+    ecli: get('ecli-number'),
+    sud: get('court'),
+    datum: get('decision-date'),
+    pravomocnost: get('decision-finality'),
+    vrsta: get('decision-type'),
+  };
+}
+
 export function decisionTextFromHtml(html) {
   const $ = cheerio.load(html);
   const sel = cfg().decision.textSelector;
-  if (sel && $(sel).length) return normalizeWs($(sel).text());
-  $('script, style, noscript, nav, header, footer, form, iframe').remove();
+  const $root = sel && $(sel).length ? $(sel).first() : $('body');
+  $root.find('script, style, noscript, nav, header, footer, form, iframe').remove();
   // Zadrži prijelome odlomaka radi čitljivosti citata.
-  $('p, br, div, li, tr, h1, h2, h3, h4').each((_, el) => { $(el).append('\n'); });
-  return $('body').text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
+  $root.find('p, br, div, li, tr, h1, h2, h3, h4').each((_, el) => { $(el).append('\n'); });
+  return $root.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
+}
+
+// Tekst i metapodaci iz stranice odluke; metapodaci s ploče odluke imaju prednost pred onima iz teksta.
+export function decisionFromHtml(html) {
+  const tekst = decisionTextFromHtml(html);
+  const fromText = metadataFromText(tekst);
+  const fromHtml = metadataFromHtml(html);
+  const meta = Object.fromEntries([...new Set([...Object.keys(fromText), ...Object.keys(fromHtml)])]
+    .map((k) => [k, fromHtml[k] ?? fromText[k] ?? null]));
+  return { tekst, meta };
 }
 
 export async function fetchDecision(ref) {
-  const html = await fetchText(ref.url);
-  const tekst = decisionTextFromHtml(html);
-  return { ...ref, tekst, meta: metadataFromText(tekst) };
+  return { ...ref, ...decisionFromHtml(await fetchText(ref.url)) };
 }

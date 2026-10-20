@@ -1,10 +1,13 @@
 // Test tijeka obrade s lažnim (mock) modelom i izvorom. Tekstovi odluka su IZMIŠLJENI
-// i služe samo za provjeru logike: provjera citata, EU reference, povezivanje predmeta.
+// i služe samo za provjeru logike: predselekcija, provjera citata, EU reference,
+// povezivanje predmeta, prag relevantnosti, navod i trošak.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runQuery } from '../src/pipeline.js';
 
 process.env.PRAKSA_VERIFY_EU = '0';
+process.env.PRAKSA_MAX_DECISIONS = '4';
+process.env.PRAKSA_RELEVANCE_THRESHOLD = '50';
+const { runQuery } = await import('../src/pipeline.js');
 
 const DOCS = {
   'x:1': 'Vrhovni sud Republike Hrvatske, poslovni broj Rev 100/2020-2. '.padEnd(250, '.') +
@@ -16,62 +19,110 @@ const DOCS = {
   'x:4': 'Općinski sud u Splitu, poslovni broj P-1/2023. '.padEnd(250, '.') + ' Vidi Rev-100/20.',
 };
 
-const source = {
-  async search(q) {
-    return Object.keys(DOCS).map((url) => ({ url, naslov: url, izvor: 'test' }));
+const source = (docs = DOCS) => ({
+  async search() {
+    return Object.keys(docs).map((url) => ({ url, naslov: url, izvor: 'test', isjecak: docs[url].slice(0, 80) }));
   },
   async fetchDecision(ref) {
-    const tekst = DOCS[ref.url];
+    const tekst = docs[ref.url];
     const m = tekst.match(/broj (.+?)\.(?: |\.)/);
-    return { ...ref, tekst, meta: { poslovniBroj: m[1] } };
+    return { ...ref, tekst, meta: { poslovniBroj: m[1], sud: tekst.split(',')[0], datum: '1.2.2021.', vrsta: 'Presuda' } };
   },
+});
+
+const PLAN = {
+  pravno_pitanje: 'Je li štrajk osoblja izvanredna okolnost?', trazeno_stajaliste: 'prijevoznik odgovara',
+  kljucne_cinjenice: [], upiti: ['otkazan let štrajk'], relevantni_propisi_hr: [], datum_od: '2020-01-01', datum_do: '',
 };
 
 const llm = {
-  async planQuery() {
-    return { sazetak_problema: 's', pravna_pitanja: [], kljucne_cinjenice: [], upiti: ['otkazan let štrajk'], pravna_podrucja: [], relevantni_propisi_hr: [], moguce_eu_poveznice: [] };
-  },
+  async planQuery() { return { ...PLAN }; },
   async assessDecision(opis, plan, d) {
     const rel = ['x:3', 'x:4'].includes(d.url) ? 'ne' : 'da';
     return {
-      relevantnost: rel === 'da' ? 90 : 5, podudaranje: rel, objasnjenje: '', cinjenice_predmeta: '', ishod: '', pravno_shvacanje: '', zasto_je_vazno: '',
-      citat: d.url === 'x:1' ? 'štrajk vlastitog osoblja prijevoznika nije izvanredna okolnost' : (d.url === 'x:2' ? 'ova rečenica ne postoji u odluci' : ''),
-      primijenjeni_propisi: [], moguce_eu_poveznice: [],
+      relevantnost: rel === 'da' ? (d.url === 'x:1' ? 90 : 70) : 5, podudaranje: rel,
+      odgovor_na_upit: '', pravno_pitanje: '', pravno_shvacanje: 'shvaćanje', bitne_cinjenice: '', razlike_od_upita: '', ishod: '',
+      citati: d.url === 'x:1'
+        ? [{ tekst: 'štrajk vlastitog osoblja prijevoznika nije izvanredna okolnost', znacaj: 'shvaćanje' }, { tekst: 'izmišljena rečenica', znacaj: '' }]
+        : (d.url === 'x:2' ? [{ tekst: 'ova rečenica ne postoji u odluci', znacaj: '' }] : []),
+      primijenjeni_propisi: [], smjer: 'u prilog', kako_iskoristiti: '', primjenjivost: { upozorenje: false, razlog: '' }, moguce_eu_poveznice: [],
     };
   },
-  async synthesize(opis, items) {
-    return { pregled: `n=${items.length}`, prevladavajuce_stajaliste: '', razlike_u_praksi: '', veza_s_pravom_eu: '', preporuke_za_daljnje_istrazivanje: [] };
+  async answerQuery(opis, plan, items) {
+    return { kratki_odgovor: `n=${items.map((d) => d.br).join(',')}`, vodeca_praksa: '', suprotna_praksa: '', upozorenja: [], dalje_provjeriti: [], veza_s_pravom_eu: '' };
   },
 };
 
-test('tijek obrade: provjere i povezivanje', async () => {
-  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm, sources: { t: source } } });
+test('tijek obrade: provjere citata, povezivanje, prag, navod i filtar iz upita', async () => {
+  let usedFilters;
+  const src = { ...source(), async search(q, o) { usedFilters = o.filters; return source().search(q, o); } };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm, sources: { t: src } } });
+  assert.deepEqual(usedFilters, { datumOd: '2020-01-01' }, 'datum izveden iz upita');
   assert.equal(r.odluke.length, 4);
-  const [d1] = r.odluke.filter((d) => d.url === 'x:1');
-  const [d2] = r.odluke.filter((d) => d.url === 'x:2');
-  assert.equal(d1.citatProvjeren, true);
-  assert.equal(d2.citatProvjeren, false, 'izmišljeni citat mora biti označen');
+  const byUrl = Object.fromEntries(r.odluke.map((d) => [d.url, d]));
+  const [d1, d2, d4] = [byUrl['x:1'], byUrl['x:2'], byUrl['x:4']];
+  assert.deepEqual(d1.analiza.citati.map((c) => c.provjeren), [true, false], 'svaki citat provjeren zasebno');
+  assert.equal(d2.analiza.citati[0].provjeren, false, 'izmišljeni citat mora biti označen');
   assert.ok(d1.euReference.some((e) => e.celex === '32004R0261'));
   assert.ok(d1.euReference.some((e) => e.oznaka === 'C-28/20'));
-  assert.ok(d1.citiraniPredmeti.includes('Gž-55/2019'));
   assert.ok(d1.povezaniURezultatima.some((p) => p.url === 'x:2' && p.odnos === 'citira'));
-  assert.ok(d2.povezaniURezultatima.some((p) => p.url === 'x:1' && p.odnos === 'citiran u'));
-  assert.equal(r.sinteza.pregled, 'n=2', 'sinteza samo iz relevantnih odluka');
-  const [d4] = r.odluke.filter((d) => d.url === 'x:4');
   assert.ok(d4.povezaniURezultatima.some((p) => p.url === 'x:1' && p.odnos === 'citira'), 'veza unatoč različitom zapisu broja');
-  assert.ok(d1.povezaniURezultatima.some((p) => p.url === 'x:4' && p.odnos === 'citiran u'));
-  assert.equal(d1.povezaniURezultatima.filter((p) => p.url === 'x:2').length, 1, 'bez dvostrukih veza');
+  assert.equal(d1.navod, 'Vrhovni sud Republike Hrvatske, Rev 100/2020-2 od 1.2.2021. (presuda)');
+
+  // Glavni popis: relevantne po redu, s brojevima za upute [n]; ostale iza.
+  assert.deepEqual(r.odluke.map((d) => [d.url, d.istaknuta, d.br]), [['x:1', true, 1], ['x:2', true, 2], ['x:3', false, undefined], ['x:4', false, undefined]]);
+  assert.equal(r.odgovor.kratki_odgovor, 'n=1,2', 'odgovor samo iz glavnih odluka');
+  assert.equal(r.pregledano, 4);
+});
+
+test('predselekcija: kad je kandidata više od N, analiziraju se samo odabrani', async () => {
+  const docs = { ...DOCS };
+  for (let i = 5; i <= 9; i++) docs[`x:${i}`] = `Općinski sud u Zadru, poslovni broj P-${i}/2020. `.padEnd(300, '.');
+  const analysed = [];
+  let screened;
+  const l = {
+    ...llm,
+    async screenCandidates(plan, pool, n) {
+      screened = { pool: pool.length, n };
+      return { odabrane: [{ id: pool.findIndex((c) => c.url === 'x:2'), ocjena: 90 }, { id: pool.findIndex((c) => c.url === 'x:1'), ocjena: 80 }, { id: 999, ocjena: 1 }] };
+    },
+    async assessDecision(...a) { analysed.push(a[2].url); return llm.assessDecision(...a); },
+  };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: source(docs) } } });
+  assert.deepEqual(screened, { pool: 9, n: 4 });
+  assert.deepEqual(analysed.sort(), ['x:1', 'x:2'], 'nepostojeći id se zanemaruje');
+  assert.equal(r.pregledano, 9);
 });
 
 test('ista odluka iz više upita analizira se jednom', async () => {
   let analiza = 0;
-  const src = {
-    async search(q) { return [{ url: 'x:1', naslov: 'x:1', izvor: 'test', q }]; },
-    fetchDecision: source.fetchDecision,
-  };
-  const l = { ...llm, async planQuery() { return { ...(await llm.planQuery()), upiti: ['a', 'b', 'c'] }; },
+  const src = { ...source(), async search() { return [{ url: 'x:1', naslov: 'x:1', izvor: 'test' }]; } };
+  const l = { ...llm, async planQuery() { return { ...PLAN, upiti: ['a', 'b', 'c'] }; },
     async assessDecision(...a) { analiza++; return llm.assessDecision(...a); } };
   const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: src } } });
   assert.equal(analiza, 1);
   assert.deepEqual(r.odluke[0].upiti, ['a', 'b', 'c']);
+});
+
+test('trošak se zbraja iz svih poziva modela', async () => {
+  const usage = { input_tokens: 1000, output_tokens: 100 };
+  const l = {
+    async planQuery(o, track) { track('claude-opus-5-5', usage); return llm.planQuery(); },
+    async assessDecision(o, p, d, t, track) { track('claude-opus-5-5', usage); return llm.assessDecision(o, p, d, t); },
+    async answerQuery(o, p, items, track) { track('claude-opus-5-5', usage); return llm.answerQuery(o, p, items); },
+  };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: source() } } });
+  assert.equal(r.trosak.pozivi, 1 + 4 + 1);
+  assert.equal(r.trosak.usd, Math.round(6 * (1000 * 4 + 100 * 20) / 1e6 * 10000) / 10000);
+});
+
+test('jedna greška tražilice ne prekida ostale upite; neispravan datum iz modela se ne šalje', async () => {
+  const asked = [];
+  let filters;
+  const src = { ...source(), async search(q, o) { asked.push(q); filters = o.filters; if (q === 'b') throw new Error('istek vremena'); return source().search(q, o); } };
+  const l = { ...llm, async planQuery() { return { ...PLAN, upiti: ['a', 'b', 'c'], datum_od: '2020', datum_do: '2024-12-31' }; } };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: src } } });
+  assert.deepEqual(asked, ['a', 'b', 'c']);
+  assert.deepEqual(filters, { datumDo: '2024-12-31' });
+  assert.ok(r.upozorenja.some((u) => u.includes('istek vremena')));
 });

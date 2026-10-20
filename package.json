@@ -4,9 +4,15 @@
   "description": "Preglednik sudske prakse hrvatskih sudova s AI analizom (odluke.sudovi.hr)",
   "scripts": {
     "start": "node src/server.js",
+    "web": "node scripts/web.js",
+    "app": "electron .",
+    "postavi-prijavu": "node scripts/postavi-prijavu.js",
+    "predist": "node scripts/postavi-prijavu.js --provjeri",
+    "dist": "electron-builder --win nsis",
     "test": "node --test",
     "probe": "node scripts/probe-odluke.js",
-    "skill:build": "node scripts/build-skill.js"
+    "skill:build": "node scripts/build-skill.js",
+    "nova-lozinka": "node scripts/nova-lozinka.js"
   },
   "repository": {
     "type": "git",
@@ -20,6 +26,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.134.0",
     "cheerio": "^1.2.0",
+    "docx": "^9.11.0",
     "zod": "^4.6.7"
   },
   "private": true,
@@ -28,6 +35,34 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  },
+  "productName": "Praksa",
+  "main": "electron/main.js",
+  "author": "Hrvoje Jelić",
+  "build": {
+    "appId": "hr.praksa.preglednik",
+    "productName": "Praksa",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "public/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Praksa – sudska praksa"
+    }
   }
 }

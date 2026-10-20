@@ -14935,6 +14935,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 var root2 = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+var dataDir = process.env.PRAKSA_DATA_DIR ?? path.join(root2, "data");
+try {
+  process.loadEnvFile(path.join(root2, ".env"));
+} catch (e) {
+  if (e.code !== "ENOENT") throw e;
+}
 function readJson(file) {
   return JSON.parse(fs.readFileSync(path.resolve(root2, file), "utf8"));
 }
@@ -14944,17 +14950,39 @@ var config = {
   port: Number(process.env.PORT ?? 3e3),
   model: process.env.PRAKSA_MODEL ?? "claude-opus-5-5",
   // Koliko odluka najviše dohvatiti i analizirati po upitu (svaka analiza je jedan API poziv).
-  maxDecisions: Number(process.env.PRAKSA_MAX_DECISIONS ?? 15),
+  maxDecisions: Number(process.env.PRAKSA_MAX_DECISIONS ?? 8),
+  // Koliko kandidata (iz rezultata tražilice) model pregleda po isječcima prije odabira za analizu.
+  maxCandidates: Number(process.env.PRAKSA_MAX_CANDIDATES ?? 60),
+  // Rezultata po upitu tražilice (odluke.sudovi.hr prikazuje 10 po stranici).
+  resultsPerQuery: Number(process.env.PRAKSA_RESULTS_PER_QUERY ?? 20),
+  // Odluke ispod ovoga (ili s podudaranjem "ne") prikazuju se samo pod "Ostale pronađene odluke".
+  relevanceThreshold: Number(process.env.PRAKSA_RELEVANCE_THRESHOLD ?? 50),
   // Odluke dulje od ovoga se skraćuju prije analize; skraćivanje se uvijek prikazuje korisniku.
   maxDecisionChars: Number(process.env.PRAKSA_MAX_CHARS ?? 15e4),
   analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 3),
   minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 1500),
   userAgent: process.env.PRAKSA_USER_AGENT ?? "praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)",
+  dataDir,
   // PRAKSA_CACHE_DIR koristi skill (predmemorija izvan mape skilla); čita se pri svakoj upotrebi.
   get cacheDir() {
-    return process.env.PRAKSA_CACHE_DIR ?? path.join(root2, "data", "cache");
+    return process.env.PRAKSA_CACHE_DIR ?? path.join(dataDir, "cache");
   },
-  corpusDir: path.join(root2, "data", "corpus"),
+  corpusDir: path.join(dataDir, "corpus"),
+  // Spremljeni predmeti (pretrage, bilješke); sadrže podatke o predmetima ureda i nisu u gitu.
+  predmetiDir: process.env.PRAKSA_PREDMETI_DIR ?? path.join(dataDir, "predmeti"),
+  // Korisnik i lozinka (scrypt) te postavke (API ključ…); nisu u gitu.
+  authFile: path.join(dataDir, "prijava.json"),
+  // prijava starije verzije (jedan korisnik); preuzima se u korisnici.json
+  usersFile: path.join(dataDir, "korisnici.json"),
+  // Web u uredu: PRAKSA_HOST=0.0.0.0 otvara pristup s drugih računala u mreži.
+  host: process.env.PRAKSA_HOST ?? "127.0.0.1",
+  // Dodatni nazivi pod kojima se poslužitelju pristupa (npr. ured-pc:8080), uz lokalne IP adrese i naziv računala.
+  allowedHosts: (process.env.PRAKSA_ALLOWED_HOSTS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+  // Pristupni podaci ugrađeni u instalaciju (nije u gitu; izrađuje `npm run postavi-prijavu`).
+  bundledAuthFile: process.env.PRAKSA_BUNDLED_AUTH ?? path.join(root2, "src", "prijava-ugradena.json"),
+  settingsFile: path.join(dataDir, "postavke.json"),
+  // Zadnji provjereni cjenik modela (automatski se osvježava, vidi src/pricing.js).
+  pricingFile: path.join(dataDir, "cjenik.json"),
   // Izvori: "odluke" (odluke.sudovi.hr), "local" (data/corpus). Npr. PRAKSA_SOURCES=local
   sources: (process.env.PRAKSA_SOURCES ?? "odluke,local").split(",").map((s) => s.trim()).filter(Boolean),
   get verifyEuViaSparql() {
@@ -15204,10 +15232,23 @@ function parseResults(html3, pageUrl) {
     if (!isResultLink(raw, pageUrl)) return;
     const href = canonicalDecisionUrl(raw);
     if (seen.has(href)) return;
-    const row = $2(a).closest("tr, li, article, .row, div");
+    const $a = $2(a);
+    const field = (sel2) => normalizeWs($a.find(sel2).first().text()) || null;
+    if ($a.find(".decision-number").length) {
+      seen.set(href, {
+        url: href,
+        naslov: field(".decision-number") ?? href,
+        sud: field(".decision-court"),
+        datum: field(".decision-date"),
+        pravomocnost: field(".final-decision"),
+        isjecak: (field(".result-snippet") ?? "").slice(0, 1200)
+      });
+      return;
+    }
+    const row = $a.closest("tr, li, article, .row, div");
     seen.set(href, {
       url: href,
-      naslov: normalizeWs($2(a).text()) || href,
+      naslov: normalizeWs($a.text()) || href,
       isjecak: normalizeWs(row.text()).slice(0, 400)
     });
   });
@@ -15217,12 +15258,16 @@ function parseResults(html3, pageUrl) {
   if ($next.length && $next.attr("href")) next2 = abs($next.attr("href"), pageUrl);
   return { results: [...seen.values()], next: next2 };
 }
+function siteDate(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? `${Number(m[3])}.${Number(m[2])}.${m[1]}.` : value;
+}
 async function firstPage(query, filters2) {
   const c = cfg();
   const searchPage = c.baseUrl + c.searchPagePath;
   const params = { ...c.search.extraParams };
   for (const [k, field] of Object.entries(c.search.filterFields)) {
-    if (field && filters2?.[k]) params[field] = filters2[k];
+    if (field && filters2?.[k]) params[field] = siteDate(filters2[k]);
   }
   if (c.search.mode === "template") {
     if (!c.search.template) throw new Error("odluke.config.json: search.template nije postavljen");
@@ -15267,20 +15312,37 @@ function metadataFromText(text3) {
     sud: head.match(COURT_RE)?.[0] ?? null
   };
 }
+function metadataFromHtml(html3) {
+  const $2 = load(html3);
+  const get2 = (type) => normalizeWs($2(`.metadata-item[data-metadata-type="${type}"] .metadata-content`).first().text()) || null;
+  return {
+    poslovniBroj: get2("decision-number"),
+    ecli: get2("ecli-number"),
+    sud: get2("court"),
+    datum: get2("decision-date"),
+    pravomocnost: get2("decision-finality"),
+    vrsta: get2("decision-type")
+  };
+}
 function decisionTextFromHtml(html3) {
   const $2 = load(html3);
   const sel = cfg().decision.textSelector;
-  if (sel && $2(sel).length) return normalizeWs($2(sel).text());
-  $2("script, style, noscript, nav, header, footer, form, iframe").remove();
-  $2("p, br, div, li, tr, h1, h2, h3, h4").each((_, el) => {
+  const $root = sel && $2(sel).length ? $2(sel).first() : $2("body");
+  $root.find("script, style, noscript, nav, header, footer, form, iframe").remove();
+  $root.find("p, br, div, li, tr, h1, h2, h3, h4").each((_, el) => {
     $2(el).append("\n");
   });
-  return $2("body").text().replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n\n").trim();
+  return $root.text().replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n\n").trim();
+}
+function decisionFromHtml(html3) {
+  const tekst = decisionTextFromHtml(html3);
+  const fromText = metadataFromText(tekst);
+  const fromHtml = metadataFromHtml(html3);
+  const meta = Object.fromEntries([.../* @__PURE__ */ new Set([...Object.keys(fromText), ...Object.keys(fromHtml)])].map((k) => [k, fromHtml[k] ?? fromText[k] ?? null]));
+  return { tekst, meta };
 }
 async function fetchDecision(ref) {
-  const html3 = await fetchText(ref.url);
-  const tekst = decisionTextFromHtml(html3);
-  return { ...ref, tekst, meta: metadataFromText(tekst) };
+  return { ...ref, ...decisionFromHtml(await fetchText(ref.url)) };
 }
 
 // src/related.js
@@ -15352,7 +15414,8 @@ async function verifyAll(refs) {
 // skill/praksa-cli.js
 var HELP = `Upotreba: node praksa.mjs <naredba> [argumenti]
 
-  pretrazi <upit>... [--limit N]       pretra\u017Ei odluke.sudovi.hr; vi\u0161e upita odjednom
+  pretrazi <upit>... [--limit N] [--od YYYY-MM-DD] [--do YYYY-MM-DD]
+                                       pretra\u017Ei odluke.sudovi.hr; vi\u0161e upita odjednom, po \u017Eelji s datumom odluke
   dohvati <url|datoteka>... [--dir D]   spremi tekst odluka u D/odluke/*.txt i reference u *.json
   citat <datoteka.txt> <citat>          je li citat doslovno u tekstu odluke
   povezi [--dir D]                      pove\u017Ei dohva\u0107ene odluke koje se citiraju ili citiraju iste predmete
@@ -15383,15 +15446,18 @@ function slugFor(ref) {
   const base = path3.basename(ref).replace(/\.[^.]+$/, "").replace(/[^\p{L}\d_-]+/gu, "_").slice(0, 60);
   return `${base}-${crypto2.createHash("sha1").update(ref).digest("hex").slice(0, 8)}`;
 }
-async function pretrazi(upiti, { limit = "15" }) {
+async function pretrazi(upiti, { limit = "15", od, do: doDatuma }) {
   if (!upiti.length) throw new Error("Navedite barem jedan upit.");
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  for (const d of [od, doDatuma]) if (d && !iso.test(d)) throw new Error(`Datum "${d}" nije u obliku YYYY-MM-DD.`);
+  const filters2 = Object.fromEntries(Object.entries({ datumOd: od, datumDo: doDatuma }).filter(([, v]) => v));
   const refs = /* @__PURE__ */ new Map();
   const upozorenja = [];
   for (const q of upiti) {
     process.stderr.write(`Pretra\u017Eujem: ${q}
 `);
     try {
-      for (const r of await search(q, { limit: Number(limit) })) {
+      for (const r of await search(q, { filters: filters2, limit: Number(limit) })) {
         if (!refs.has(r.url)) refs.set(r.url, { url: r.url, naslov: r.naslov, isjecak: r.isjecak, upiti: [q] });
         else refs.get(r.url).upiti.push(q);
       }
@@ -15409,8 +15475,9 @@ async function readDecision(ref) {
     return { url, izvor: d.izvor, tekst: d.tekst, meta: d.meta };
   }
   const raw = await fs3.readFile(ref, "utf8");
-  const tekst = /\.html?$/i.test(ref) ? decisionTextFromHtml(raw) : raw;
-  return { url: `datoteka:${path3.resolve(ref)}`, izvor: "lokalna datoteka", tekst, meta: metadataFromText(tekst) };
+  if (!/\.html?$/i.test(ref)) return { url: `datoteka:${path3.resolve(ref)}`, izvor: "lokalna datoteka", tekst: raw, meta: metadataFromText(raw) };
+  const { tekst, meta } = decisionFromHtml(raw);
+  return { url: `datoteka:${path3.resolve(ref)}`, izvor: "lokalna datoteka", tekst, meta };
 }
 async function dohvati(refs, { dir = "praksa-rad" }) {
   if (!refs.length) throw new Error("Navedite barem jedan URL ili datoteku.");

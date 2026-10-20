@@ -12,7 +12,7 @@ Podjela posla je stroga:
   poslovne brojeve, reference na pravo EU (s CELEX brojem), provjeru citata i povezivanje predmeta.
 - **Ti** razrađuješ opis, čitaš odluke, ocjenjuješ relevantnost i pišeš sintezu.
 
-Skripti treba samo Node.js 20+. Pokreći je kao `node <mapa ovog skilla>/scripts/praksa.mjs <naredba>`.
+Skripti treba samo Node.js 20.12 ili noviji. Pokreći je kao `node <mapa ovog skilla>/scripts/praksa.mjs <naredba>`.
 Izlaz je JSON. Radne datoteke idu u `--dir` (zadano `./praksa-rad`).
 
 ## Prije početka
@@ -42,6 +42,7 @@ Sve upite pošalji jednim pozivom:
 node <mapa skilla>/scripts/praksa.mjs pretrazi "upit 1" "upit 2" "upit 3"
 ```
 
+Ako opis ili korisnik ograničava razdoblje, dodaj `--od YYYY-MM-DD` i/ili `--do YYYY-MM-DD` (datum odluke).
 Rezultati su poredani tako da su prve odluke koje je pronašlo više upita (`upiti`). Ako su `rezultati` prazni,
 a `upozorenja` sadrže mrežnu grešku (npr. `ENOTFOUND`, `ECONNREFUSED`, `HTTP 403`), stranica nije dostupna:
 reci to korisniku i ponudi da sam spremi ili zalijepi tekst odluka (vidi „Kad pretraga ne radi”).
@@ -55,7 +56,8 @@ Na temelju naslova, isječaka i broja upita odaberi do 8 najperspektivnijih odlu
 node <mapa skilla>/scripts/praksa.mjs dohvati "<url1>" "<url2>" ... --dir praksa-rad
 ```
 
-Za svaku odluku dobivaš `datoteka` (puni tekst), `meta` (poslovni broj, sud, ECLI),
+Za svaku odluku dobivaš `datoteka` (puni tekst), `meta` (poslovni broj, sud, ECLI te, kad ih stranica navodi,
+datum, pravomoćnost i vrstu odluke),
 `citiraniPredmeti`, `euReference` i `ekljp`. Ove podatke izvukao je kod iz teksta i oni su **provjereni sloj**.
 
 ### 4. Pročitaj i ocijeni svaku odluku
@@ -122,7 +124,7 @@ znači samo da provjera nije bila moguća, ne da akt ne postoji.
 node <mapa skilla>/scripts/praksa.mjs dohvati odluka1.html odluka2.txt --dir praksa-rad
 ```
 
-Korisnik može odluke spremiti iz preglednika (Ctrl+S) ili zalijepiti tekst, koji tada spremi u `.txt` datoteku
+Korisnik može odluke spremiti iz preglednika (Ctrl+S, „Web stranica, samo HTML”; metapodaci se tada čitaju kao pri dohvatu) ili zalijepiti tekst, koji tada spremi u `.txt` datoteku
 pa nastavi od koraka 4. Ako tražilica stalno ne vraća rezultate iako je stranica dostupna, struktura stranice
 se vjerojatno promijenila: to treba podesiti u `scripts/odluke.config.json` (upute su u repozitoriju projekta).
 

@@ -13,14 +13,15 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import * as odluke from '../src/sources/odluke.js';
-import { canonicalDecisionUrl, decisionTextFromHtml, metadataFromText } from '../src/sources/odluke.js';
+import { canonicalDecisionUrl, decisionFromHtml, metadataFromText } from '../src/sources/odluke.js';
 import { caseKey, extractCaseNumbers, extractEuReferences, quoteInText } from '../src/extract.js';
 import { linkRelated, uniqueByCaseKey } from '../src/related.js';
 import { verifyAll } from '../src/eu.js';
 
 const HELP = `Upotreba: node praksa.mjs <naredba> [argumenti]
 
-  pretrazi <upit>... [--limit N]       pretraži odluke.sudovi.hr; više upita odjednom
+  pretrazi <upit>... [--limit N] [--od YYYY-MM-DD] [--do YYYY-MM-DD]
+                                       pretraži odluke.sudovi.hr; više upita odjednom, po želji s datumom odluke
   dohvati <url|datoteka>... [--dir D]   spremi tekst odluka u D/odluke/*.txt i reference u *.json
   citat <datoteka.txt> <citat>          je li citat doslovno u tekstu odluke
   povezi [--dir D]                      poveži dohvaćene odluke koje se citiraju ili citiraju iste predmete
@@ -56,14 +57,17 @@ function slugFor(ref) {
   return `${base}-${crypto.createHash('sha1').update(ref).digest('hex').slice(0, 8)}`;
 }
 
-async function pretrazi(upiti, { limit = '15' }) {
+async function pretrazi(upiti, { limit = '15', od, do: doDatuma }) {
   if (!upiti.length) throw new Error('Navedite barem jedan upit.');
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  for (const d of [od, doDatuma]) if (d && !iso.test(d)) throw new Error(`Datum "${d}" nije u obliku YYYY-MM-DD.`);
+  const filters = Object.fromEntries(Object.entries({ datumOd: od, datumDo: doDatuma }).filter(([, v]) => v));
   const refs = new Map();
   const upozorenja = [];
   for (const q of upiti) {
     process.stderr.write(`Pretražujem: ${q}\n`);
     try {
-      for (const r of await odluke.search(q, { limit: Number(limit) })) {
+      for (const r of await odluke.search(q, { filters, limit: Number(limit) })) {
         if (!refs.has(r.url)) refs.set(r.url, { url: r.url, naslov: r.naslov, isjecak: r.isjecak, upiti: [q] });
         else refs.get(r.url).upiti.push(q);
       }
@@ -83,8 +87,10 @@ async function readDecision(ref) {
     return { url, izvor: d.izvor, tekst: d.tekst, meta: d.meta };
   }
   const raw = await fs.readFile(ref, 'utf8');
-  const tekst = /\.html?$/i.test(ref) ? decisionTextFromHtml(raw) : raw;
-  return { url: `datoteka:${path.resolve(ref)}`, izvor: 'lokalna datoteka', tekst, meta: metadataFromText(tekst) };
+  if (!/\.html?$/i.test(ref)) return { url: `datoteka:${path.resolve(ref)}`, izvor: 'lokalna datoteka', tekst: raw, meta: metadataFromText(raw) };
+  // Stranica odluke spremljena iz preglednika: obrađuje se isto kao pri dohvatu preko URL-a.
+  const { tekst, meta } = decisionFromHtml(raw);
+  return { url: `datoteka:${path.resolve(ref)}`, izvor: 'lokalna datoteka', tekst, meta };
 }
 
 async function dohvati(refs, { dir = 'praksa-rad' }) {
