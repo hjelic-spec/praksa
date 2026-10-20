@@ -162,14 +162,18 @@ Izvor je `skill/praksa-cli.js`; nakon izmjena u njemu ili u `src/` pokrenite `np
 **Instalacija za Claude Code** (osobni skill, vrijedi u svim projektima):
 
 ```powershell
-# Windows (PowerShell), iz mape repozitorija
-New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\skills" | Out-Null
-Copy-Item -Recurse skill\sudska-praksa "$env:USERPROFILE\.claude\skills\sudska-praksa"
+# Windows (PowerShell), iz mape repozitorija. Mapa skilla se izričito stvara i kopira se samo
+# njezin sadržaj (\*): Copy-Item -Recurse inače ovisno o tome postoji li odredište kopira ili
+# sadržaj umjesto mape ili mapu unutar mape, a Claude Code skill tada ne pronalazi.
+$cilj = "$env:USERPROFILE\.claude\skills\sudska-praksa"
+New-Item -ItemType Directory -Force $cilj | Out-Null
+Copy-Item -Recurse -Force skill\sudska-praksa\* $cilj
+Test-Path "$cilj\scripts\praksa.mjs"   # mora ispisati True
 ```
 
 ```bash
 # Linux / macOS
-mkdir -p ~/.claude/skills && cp -r skill/sudska-praksa ~/.claude/skills/
+mkdir -p ~/.claude/skills/sudska-praksa && cp -r skill/sudska-praksa/. ~/.claude/skills/sudska-praksa/
 ```
 
 Zatim u Claude Codeu npr. „Nađi sudsku praksu: putnik je ozlijeđen kad je autobus naglo zakočio.”
