@@ -39,7 +39,8 @@ export const config = {
   analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 8),
   // Koliko upita tražilici ide istovremeno (svaki zahtjev i dalje poštuje minDelayMs).
   searchConcurrency: Number(process.env.PRAKSA_SEARCH_CONCURRENCY ?? 3),
-  minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 1500),
+  // Najmanji razmak između zahtjeva prema istom poslužitelju (odluke.sudovi.hr): jedan zahtjev u 3 s.
+  minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 3000),
   userAgent: process.env.PRAKSA_USER_AGENT ?? 'praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)',
   dataDir,
   cacheDir: path.join(dataDir, 'cache'),
