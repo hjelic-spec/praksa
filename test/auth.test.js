@@ -66,6 +66,10 @@ test('postavljanje, prijava, postavke, promjena lozinke i odjava', async () => {
   assert.equal(m.data.model, 'claude-sonnet-5-5');
   assert.equal((await call('/api/info', { cookie: login.cookie })).data.model, 'claude-sonnet-5-5');
 
+  // Verzija aplikacije iz package.json (prikazuje se u Postavkama).
+  const pkg = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal((await call('/api/info', { cookie: login.cookie })).data.verzija, pkg.version);
+
   // Broj odluka u lokalnoj zbirci (kvadratić iznad tražilice); računaju se samo .txt/.md/.html.
   assert.equal((await call('/api/info', { cookie: login.cookie })).data.lokalnaZbirka, 0, 'mapa ne postoji');
   await fs.mkdir(path.join(tmp, 'corpus'), { recursive: true });
