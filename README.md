@@ -63,7 +63,7 @@ poslovni broj `pb`, ECLI `ecli`); u sučelju se pojavljuju kad se dodaju u `filt
 
 Ograničenja koja nisu riješena:
 - odluke dostupne samo kao PDF/DOC nisu podržane (tekst se ne izvlači);
-- uvjeti korištenja i `robots.txt` stranice nisu provjereni – provjerite ih prije šire upotrebe. Adapter šalje najviše jedan zahtjev u 1,5 s i sprema stranice u `data/cache`.
+- uvjeti korištenja i `robots.txt` stranice nisu provjereni – provjerite ih prije šire upotrebe. Adapter šalje najviše jedan zahtjev u 1,5 s i sprema stranice u `data/cache` (rezultate pretrage 6 sati, odluke 30 dana).
 
 ## Web u uredu (više korisnika)
 
@@ -133,7 +133,9 @@ Postavke (varijable okruženja):
 | `PRAKSA_RELEVANCE_THRESHOLD` | 50 | prag za glavni popis rezultata |
 | `PRAKSA_MAX_CHARS` | 150000 | dulje odluke se skraćuju za analizu (prikazuje se oznaka) |
 | `PRAKSA_SOURCES` | `odluke,local` | izvori |
-| `PRAKSA_MIN_DELAY_MS` | 1500 | razmak između zahtjeva prema istom poslužitelju |
+| `PRAKSA_MIN_DELAY_MS` | 1500 | razmak između zahtjeva prema istom poslužitelju (vrijedi i za istovremene zahtjeve) |
+| `PRAKSA_CONCURRENCY` | 8 | odluka koje se analiziraju istovremeno (pozivi modela su najsporiji korak) |
+| `PRAKSA_SEARCH_CONCURRENCY` | 3 | upita tražilici istovremeno |
 | `PRAKSA_VERIFY_EU` | 1 | `0` isključuje provjeru CELEX-a u CELLAR-u |
 | `PRAKSA_USER_AGENT` | … | upišite kontakt kako bi vas operater stranice mogao kontaktirati |
 

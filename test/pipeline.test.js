@@ -177,3 +177,30 @@ test('isti upit se tražilici ne šalje dvaput', async () => {
   assert.deepEqual(asked, ['Otkazan let štrajk', 'izvanredna okolnost']);
   assert.deepEqual(r.plan.upiti, asked);
 });
+
+test('izvor koji ne radi: nakon tri neuspjela upita ostali se ne šalju', async () => {
+  let calls = 0;
+  const dead = { async search() { calls++; throw new Error('ENOTFOUND'); }, async fetchDecision() { throw new Error('x'); } };
+  const l = { ...llm, async planQuery() { return { ...PLAN, upiti: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }; } };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: dead } } });
+  assert.equal(calls, 3);
+  assert.equal(r.upozorenja.filter((u) => u.includes('ENOTFOUND')).length, 3);
+  assert.equal(r.odluke.length, 0);
+});
+
+test('odluke se analiziraju istovremeno, a rezultati spajaju redom upita', async () => {
+  let active = 0;
+  let peak = 0;
+  const l = {
+    ...llm,
+    async assessDecision(...a) {
+      peak = Math.max(peak, ++active);
+      await new Promise((res) => setTimeout(res, 30));
+      active--;
+      return llm.assessDecision(...a);
+    },
+  };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: source() } } });
+  assert.equal(peak, 4, 'sve četiri odluke odjednom (PRAKSA_MAX_DECISIONS=4)');
+  assert.equal(r.odluke.length, 4);
+});

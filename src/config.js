@@ -34,7 +34,11 @@ export const config = {
   relevanceThreshold: Number(process.env.PRAKSA_RELEVANCE_THRESHOLD ?? 50),
   // Odluke dulje od ovoga se skraćuju prije analize; skraćivanje se uvijek prikazuje korisniku.
   maxDecisionChars: Number(process.env.PRAKSA_MAX_CHARS ?? 150_000),
-  analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 3),
+  // Koliko se odluka analizira istovremeno (pozivi modela su najsporiji korak; dohvat stranica
+  // ionako ograničava minDelayMs). Zadano: sve odabrane odluke odjednom, najviše 8.
+  analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 8),
+  // Koliko upita tražilici ide istovremeno (svaki zahtjev i dalje poštuje minDelayMs).
+  searchConcurrency: Number(process.env.PRAKSA_SEARCH_CONCURRENCY ?? 3),
   minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 1500),
   userAgent: process.env.PRAKSA_USER_AGENT ?? 'praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)',
   dataDir,

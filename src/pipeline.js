@@ -109,24 +109,34 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, o
   });
 
   progress({ korak: 'pretrazivanje', poruka: `Pretražujem odluke (${plan.upiti.length} upita)…` });
-  const refs = new Map();
-  for (const name of sources) {
-    const src = S[name];
-    if (!src) continue;
+  // Izvori se pretražuju paralelno, a upiti unutar izvora do searchConcurrency istovremeno.
+  // Rezultati se spajaju redom upita, pa je ishod isti kao kod pretrage jednog po jednog.
+  const perSource = await Promise.all(sources.filter((name) => S[name]).map(async (name) => {
     let failures = 0;
-    for (const q of plan.upiti) {
+    let successes = 0;
+    const results = await mapLimit(plan.upiti, config.searchConcurrency, async (q) => {
+      // Tri neuspjela upita bez ijednog uspješnog znače da izvor ne radi: ostali se ne šalju.
+      if (failures >= 3 && !successes) return null;
       try {
-        for (const r of await src.search(q, { filters: primijenjeniFilteri, limit: config.resultsPerQuery })) {
-          if (!refs.has(r.url)) refs.set(r.url, { ...r, upiti: [q], src: name });
-          else refs.get(r.url).upiti.push(q);
-        }
-        failures = 0;
+        const found = await S[name].search(q, { filters: primijenjeniFilteri, limit: config.resultsPerQuery });
+        successes++;
+        return found;
       } catch (e) {
+        failures++;
         upozorenja.push(`Izvor "${name}", upit "${q}": ${e.message}`);
-        // Pojedinačna greška (npr. istek vremena) ne prekida pretragu; tri zaredom znače da izvor ne radi.
-        if (++failures >= 3) break;
+        return null;
       }
-    }
+    });
+    return { name, results };
+  }));
+  const refs = new Map();
+  for (const { name, results } of perSource) {
+    results.forEach((found, i) => {
+      for (const r of found ?? []) {
+        if (!refs.has(r.url)) refs.set(r.url, { ...r, upiti: [plan.upiti[i]], src: name });
+        else refs.get(r.url).upiti.push(plan.upiti[i]);
+      }
+    });
   }
   // Prednost odlukama koje je pronašlo više upita.
   const pool = [...refs.values()].sort((a, b) => b.upiti.length - a.upiti.length).slice(0, config.maxCandidates);
