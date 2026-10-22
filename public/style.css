@@ -138,4 +138,6 @@ main.narrow input { width: 100%; }
 .user-row.pending { background: var(--accent-soft); margin: 0 -16px; padding: 12px 16px; }
 .user-row .row { margin-top: 4px; }
 .user-row button { padding: 5px 14px; font-size: .9rem; }
+.user-row .kvota-input { width: 130px; padding: 4px 8px; }
+.user-row code { user-select: all; font-size: 1rem; }
 .uspjeh { color: var(--ok); }

@@ -88,7 +88,8 @@ function postaviOpcije(lokalnaZbirka, mapa) {
     lok.checked = false;
     lok.disabled = true;
     $('#opc-lokalno-oznaka').classList.add('onemoguceno');
-    $('#opc-lokalno-broj').textContent = mapa ? `(prazna – odluke (.txt, .html) dodajte u ${mapa})` : '(prazna – odluke dodaje administrator)';
+    $('#opc-lokalno-broj').textContent = '(prazna)';
+    $('#opc-lokalno-oznaka').title = mapa ? `Zbirka je prazna. Odluke (.txt, .html) dodajte u mapu ${mapa}` : 'Zbirka je prazna; odluke dodaje administrator.';
   } else {
     if (typeof spremljeno.lokalnaZbirka === 'boolean') lok.checked = spremljeno.lokalnaZbirka;
     $('#opc-lokalno-broj').textContent = `(${lokalnaZbirka} ${odlukaRijec(lokalnaZbirka)})`;
@@ -117,6 +118,7 @@ $('#upit').addEventListener('submit', async (e) => {
         $('#status').hidden = true;
         await selectPredmet(job.predmetId);
         render(job.rezultat);
+        api('/api/info').then((i) => renderKvota(i.kvota, i.uloga === 'admin')).catch(() => {});
         break;
       }
       if (job.status === 'greška') throw new Error(job.greska);
@@ -403,8 +405,16 @@ async function loadKorisnici() {
   $('#popis-korisnika').innerHTML = list.map((u) => `<div class="user-row ${u.status === 'ceka' ? 'pending' : ''}">
     <div><strong>${esc(u.ime || u.email)}</strong> ${u.uloga === 'admin' ? '<span class="badge">administrator</span>' : `<span class="badge ${u.status === 'odobren' ? 'da' : u.status === 'ceka' ? 'djelomično' : 'ne'}">${esc(STATUS_LABEL[u.status])}</span>`}</div>
     <div class="meta">${esc(u.email)} · registriran ${fmtDate(u.stvoreno)} · zadnja prijava ${fmtDate(u.zadnjaPrijava)}</div>
-    <div class="meta">Ovaj mjesec: ${u.ovajMjesec.pretrage} pretraga · ${usd(u.ovajMjesec.usd)}</div>
-    ${u.uloga === 'admin' ? '' : `<div class="row">${(ACTIONS[u.status] ?? []).map(([a, l]) => `<button type="button" class="${a === 'odobri' ? '' : 'secondary'}" data-korisnik="${esc(u.id)}" data-akcija="${a}">${l}</button>`).join('')}</div>`}
+    <div class="meta">Ovaj mjesec: ${u.ovajMjesec.pretrage} pretraga · ${usd(u.ovajMjesec.usd)}${u.kvotaVrijedi ? ` od ${usd(u.kvotaVrijedi)}` : ''}</div>
+    ${u.uloga === 'admin' ? '' : `<div class="row center">
+      <label class="meta" for="kvota-${esc(u.id)}">Kvota USD</label>
+      <input id="kvota-${esc(u.id)}" class="kvota-input" type="number" min="0" step="0.5" value="${u.kvotaUSD ?? ''}"
+        placeholder="${u.kvotaZadana ? `zadana (${u.kvotaZadana})` : 'bez ograničenja'}" title="Prazno = zadana kvota; 0 = bez ograničenja">
+      <button type="button" class="secondary" data-kvota="${esc(u.id)}">Spremi kvotu</button>
+      ${u.status === 'odobren' ? `<button type="button" class="secondary" data-lozinka="${esc(u.id)}">Nova lozinka</button>` : ''}
+    </div>
+    <p class="meta nova-lozinka" hidden></p>
+    <div class="row">${(ACTIONS[u.status] ?? []).map(([a, l]) => `<button type="button" class="${a === 'odobri' ? '' : 'secondary'}" data-korisnik="${esc(u.id)}" data-akcija="${a}">${l}</button>`).join('')}</div>`}
   </div>`).join('');
 }
 
@@ -414,6 +424,26 @@ $('#otvori-korisnike').addEventListener('click', async () => {
 });
 
 $('#popis-korisnika').addEventListener('click', async (e) => {
+  const kv = e.target.closest('[data-kvota]');
+  const loz = e.target.closest('[data-lozinka]');
+  if (kv) {
+    const v = $(`#kvota-${CSS.escape(kv.dataset.kvota)}`).value.trim();
+    try {
+      await api(`/api/admin/korisnici/${kv.dataset.kvota}/kvota`, { method: 'POST', body: { kvotaUSD: v === '' ? null : Number(v) } });
+      await loadKorisnici();
+    } catch (err) { showError(err); }
+    return;
+  }
+  if (loz) {
+    if (!confirm('Postaviti korisniku novu nasumičnu lozinku? Bit će odjavljen sa svih uređaja.')) return;
+    try {
+      const { lozinka } = await api(`/api/admin/korisnici/${loz.dataset.lozinka}/lozinka`, { method: 'POST' });
+      const p = loz.closest('.user-row').querySelector('.nova-lozinka');
+      p.hidden = false;
+      p.innerHTML = `Nova lozinka: <code>${esc(lozinka)}</code> – prikazuje se samo sada; prenesite je korisniku sigurnim putem.`;
+    } catch (err) { showError(err); }
+    return;
+  }
   const b = e.target.closest('[data-akcija]');
   if (!b) return;
   if (b.dataset.akcija === 'obrisi' && !confirm('Obrisati korisnika i sve njegove predmete? Ovo se ne može poništiti.')) return;
@@ -477,6 +507,7 @@ async function loadPostavke() {
   $('#kljuc-stanje').textContent = s.imaKljuc ? `Ključ je postavljen (završava s …${s.kljucZavrsava}).` : 'Ključ NIJE postavljen – pretraga neće raditi.';
   renderModeli(s);
   $('#max-odluka').value = s.maxOdluka;
+  $('#kvota-zadana').value = s.kvotaUSD;
   $('#kontakt').value = s.kontakt;
   renderCjenik(await api('/api/cjenik'));
   return s;
@@ -510,7 +541,7 @@ $('#osvjezi-cjenik').addEventListener('click', async () => {
 $('#postavke-forma').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await api('/api/postavke', { method: 'POST', body: { apiKey: $('#api-kljuc').value.trim(), model: $('#model').value, maxOdluka: $('#max-odluka').value, kontakt: $('#kontakt').value } });
+    await api('/api/postavke', { method: 'POST', body: { apiKey: $('#api-kljuc').value.trim(), model: $('#model').value, maxOdluka: $('#max-odluka').value, kvotaUSD: $('#kvota-zadana').value, kontakt: $('#kontakt').value } });
     $('#api-kljuc').value = '';
     await loadPostavke();
     $('#postavke-poruka').textContent = 'Postavke su spremljene.';
@@ -530,12 +561,22 @@ $('#odjava').addEventListener('click', async () => {
   location.href = '/prijava.html';
 });
 
+// Potrošnja i kvota prijavljenog korisnika za tekući mjesec (u Postavkama).
+function renderKvota(k, isAdmin) {
+  if (!k || isAdmin) { $('#kvota-stanje').hidden = true; return; }
+  $('#kvota-stanje').hidden = false;
+  $('#kvota-stanje').textContent = k.limitUSD
+    ? `Potrošnja ovaj mjesec: ${usd(k.potrosenoUSD)} od ${usd(k.limitUSD)}${k.potrosenoUSD >= k.limitUSD ? ' – kvota je potrošena' : ''}.`
+    : `Potrošnja ovaj mjesec: ${usd(k.potrosenoUSD)} (bez ograničenja).`;
+}
+
 async function init() {
   const info = await api('/api/info');
   state.uloga = info.uloga;
   $('#verzija').textContent = info.verzija ? `Praksa ${info.verzija}` : '';
   const isAdmin = info.uloga === 'admin';
   $('#korisnik').textContent = `Prijavljeni: ${info.ime ? `${info.ime} (${info.korisnik})` : info.korisnik}${isAdmin ? ' · administrator' : ''}`;
+  renderKvota(info.kvota, isAdmin);
   $('#admin-postavke').hidden = !isAdmin;
   $('#otvori-korisnike').hidden = !isAdmin;
   $('#broj-cekanje').textContent = info.naCekanju || '';

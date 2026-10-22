@@ -27,6 +27,7 @@
     "@anthropic-ai/sdk": "^0.134.0",
     "cheerio": "^1.2.0",
     "docx": "^9.11.0",
+    "nodemailer": "10.0.16",
     "zod": "^4.6.7"
   },
   "private": true,
@@ -35,9 +36,9 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2",
     "electron": "44.4.5",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "esbuild": "^0.28.2"
   },
   "productName": "Praksa",
   "main": "electron/main.js",

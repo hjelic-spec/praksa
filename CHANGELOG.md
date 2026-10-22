@@ -3,6 +3,16 @@
 Verzija aplikacije je u `package.json` i prikazuje se u Postavkama. Windows instalacija se izrađuje
 s `npm run dist` (vidi README, „Windows aplikacija“) i zove se `Praksa Setup <verzija>.exe`.
 
+## Neobjavljeno
+
+Web na poslužitelju (zatvorena beta), vidi README „Web na poslužitelju“ i `deploy/`:
+- Rad iza HTTPS proxyja: `PRAKSA_PUBLIC_URL` (Secure kolačić, javna domena dopuštena i bez porta),
+  `PRAKSA_TRUST_PROXY` (IP korisnika iz X-Forwarded-For za zaključavanje nakon krivih lozinki).
+- Sesije preživljavaju ponovno pokretanje (`sesije.json`, samo sažeci tokena).
+- Mjesečne kvote po korisniku u USD (zadana i pojedinačna), jedna pretraga u tijeku po korisniku.
+- Nova lozinka od administratora; uz SMTP reset lozinke e-poštom i obavijest o novoj registraciji.
+- Lokalna zbirka: kad je prazna, putanja mape je u opisu kvadratića umjesto u natpisu.
+
 ## 0.2.0 – 22.10.2026.
 
 Novo:

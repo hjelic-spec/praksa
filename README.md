@@ -85,7 +85,42 @@ npm run nova-lozinka -- e@posta.hr   # nova lozinka korisniku (npr. zaboravljena
   `PRAKSA_ALLOWED_HOSTS` (npr. `praksa.ured.local`). Port: `PORT`, adresa slušanja: `PRAKSA_HOST` (`npm run web` postavlja `0.0.0.0`).
 - Pri prvom pokretanju Windows vatrozid pita za dopuštenje – dopustite za **privatne** mreže. Računalo mora biti uključeno dok ga drugi koriste.
 - **Promet nije šifriran (HTTP).** Unutar uredske mreže to je prihvatljivo, ali lozinke i upiti putuju nešifrirano; aplikaciju
-  ne izlažite internetu bez HTTPS-a (npr. iza reverse proxyja s certifikatom).
+  ne izlažite internetu bez HTTPS-a – za to vidi „Web na poslužitelju“.
+
+## Web na poslužitelju (zatvorena beta)
+
+Aplikacija na poslužitelju (VPS) u EU, dostupna preko interneta s HTTPS-om, za pozvane korisnike – bez naplate.
+Primjeri konfiguracije su u `deploy/`.
+
+1. **Poslužitelj:** Linux s Node.js 20.12+ i [Caddy](https://caddyserver.com/) (HTTPS s automatskim certifikatom).
+   Domena (DNS zapis) mora pokazivati na poslužitelj; otvoreni su samo portovi 80 i 443.
+2. **Aplikacija:** kod u `/opt/praksa` (`npm ci --omit=dev`), podaci u `/var/lib/praksa`, korisnik sustava `praksa`
+   (vlasnik podatkovne mape).
+3. **Postavke:** `deploy/praksa.env.example` → `/etc/praksa.env` (`chmod 600`). Ključne su `PRAKSA_PUBLIC_URL`
+   (javna adresa, https), `PRAKSA_TRUST_PROXY=1` i `PRAKSA_HOST=127.0.0.1` (izvana samo preko Caddyja).
+4. **Servis:** `deploy/praksa.service` → `/etc/systemd/system/`, zatim `systemctl enable --now praksa`.
+5. **HTTPS:** `deploy/Caddyfile` (upišite domenu) → `/etc/caddy/Caddyfile`, `systemctl reload caddy`.
+6. **Prvi ulazak:** otvorite javnu adresu i postavite administratora (ili ga unaprijed postavite s `npm run postavi-prijavu`).
+
+Što je za betu ugrađeno:
+
+- **Iza proxyja:** uz `PRAKSA_PUBLIC_URL=https://…` kolačić sesije ima oznaku `Secure`, domena je dopuštena (i bez porta),
+  a uz `PRAKSA_TRUST_PROXY=1` IP adresa korisnika uzima se iz `X-Forwarded-For` (zadnja adresa, koju upisuje proxy), pa
+  zaključavanje nakon 5 krivih lozinki pogađa samo tu adresu. `PRAKSA_TRUST_PROXY` ne uključujte bez proxyja.
+- **Sesije** se pamte u `sesije.json` (samo SHA-256 sažeci tokena), pa ponovno pokretanje ne odjavljuje korisnike.
+- **Kvote:** zadana mjesečna kvota po korisniku u USD (Postavke ili `PRAKSA_KVOTA_USD`; 0 = bez ograničenja), a pojedinom
+  korisniku drukčija u Korisnici. Provjerava se prije pretrage; pretraga koja je već počela uvijek se dovrši, pa zadnja
+  može kvotu prijeći za svoj trošak (najviše nekoliko USD, vidi „Troškovi“). Administrator nema kvotu. Svaki korisnik
+  može imati jednu pretragu u tijeku. Korisnik svoju potrošnju vidi u Postavkama.
+- **Lozinke:** administrator u Korisnici postavlja korisniku novu nasumičnu lozinku (prikaže se jednom; korisnik se
+  odjavljuje). Uz `PRAKSA_SMTP_URL`, `PRAKSA_MAIL_FROM` i `PRAKSA_PUBLIC_URL` korisnici sami dobivaju poveznicu za novu
+  lozinku (vrijedi sat, jednokratna; odgovor ne otkriva postoji li račun; najviše 5 zahtjeva u 15 min po adresi), a
+  administrator obavijest o svakoj novoj registraciji.
+- **Sigurnosne kopije:** cijela mapa `/var/lib/praksa` (korisnici, postavke s API ključem, predmeti). Npr. dnevni `tar`
+  u šifriranu pohranu izvan poslužitelja; kopije čuvajte kao povjerljive.
+
+Ograničenja bete: svi korisnici dijele razmak od 3 s prema odluke.sudovi.hr (pretraga bez predmemorije traje do ~72 s,
+istodobne pretrage čekaju jedna drugu); podaci su JSON datoteke (dovoljno za desetke korisnika); nema naplate.
 
 ## Windows aplikacija
 

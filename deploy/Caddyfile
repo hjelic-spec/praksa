@@ -1,0 +1,7 @@
+# Caddy: HTTPS s automatskim certifikatom (Let's Encrypt) ispred aplikacije.
+# Zamijenite domenu svojom; DNS zapis domene mora pokazivati na ovaj poslužitelj, a portovi 80 i 443 biti otvoreni.
+# Caddy prosljeđuje izvorni Host i postavlja X-Forwarded-For (zato PRAKSA_TRUST_PROXY=1 u praksa.env).
+praksa.primjer.hr {
+	encode gzip
+	reverse_proxy 127.0.0.1:8080
+}

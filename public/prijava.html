@@ -18,6 +18,25 @@
       <input id="p-lozinka" type="password" autocomplete="current-password" required>
       <button type="submit">Prijavi se</button>
       <p class="meta">Nemate račun? <a href="#" id="na-registraciju">Zatražite pristup</a></p>
+      <p class="meta" id="reset-poveznica" hidden><a href="#" id="na-zaboravljenu">Zaboravljena lozinka?</a></p>
+    </form>
+
+    <form id="zaboravljena" class="card" hidden>
+      <h2>Zaboravljena lozinka</h2>
+      <p class="meta">Poslat ćemo vam poveznicu za novu lozinku (vrijedi jedan sat).</p>
+      <label for="z-email">E-pošta</label>
+      <input id="z-email" type="email" autocomplete="email" required>
+      <button type="submit">Pošalji poveznicu</button>
+      <p class="meta"><a href="#" class="na-prijavu">Natrag na prijavu</a></p>
+    </form>
+
+    <form id="nova-lozinka" class="card" hidden>
+      <h2>Nova lozinka</h2>
+      <label for="n-lozinka">Nova lozinka <span class="meta">(barem 8 znakova)</span></label>
+      <input id="n-lozinka" type="password" autocomplete="new-password" required minlength="8">
+      <label for="n-lozinka2">Ponovite lozinku</label>
+      <input id="n-lozinka2" type="password" autocomplete="new-password" required minlength="8">
+      <button type="submit">Spremi lozinku</button>
     </form>
 
     <form id="registracija" class="card" hidden>
@@ -32,7 +51,7 @@
       <label for="r-lozinka2">Ponovite lozinku</label>
       <input id="r-lozinka2" type="password" autocomplete="new-password" required minlength="8">
       <button type="submit">Pošalji zahtjev</button>
-      <p class="meta">Već imate račun? <a href="#" id="na-prijavu">Prijava</a></p>
+      <p class="meta">Već imate račun? <a href="#" id="na-prijavu" class="na-prijavu">Prijava</a></p>
     </form>
 
     <form id="postavljanje" class="card" hidden>

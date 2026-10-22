@@ -26,6 +26,12 @@ export function loadSettings() {
   return current;
 }
 
+// Zadana mjesečna kvota po korisniku u USD (0 = bez ograničenja); administrator je može mijenjati
+// u Postavkama, a pojedinom korisniku odrediti drukčiju (auth.setKvota).
+export function defaultKvotaUSD() {
+  return current.kvotaUSD ?? Number(process.env.PRAKSA_KVOTA_USD ?? 0);
+}
+
 export function getApiKey() {
   return current.apiKey || process.env.ANTHROPIC_API_KEY || null;
 }
@@ -40,11 +46,12 @@ export function publicSettings() {
     modeli: [...MODELS, ...(isKnownModel(config.model) ? [] : [{ id: config.model, naziv: config.model, opis: 'postavljen u .env (PRAKSA_MODEL)' }])]
       .map((m) => ({ ...m, cijena: priceFor(m.id) })),
     maxOdluka: config.maxDecisions,
+    kvotaUSD: defaultKvotaUSD(),
     kontakt: current.kontakt ?? '',
   };
 }
 
-export function saveSettings({ apiKey, model, maxOdluka, kontakt }) {
+export function saveSettings({ apiKey, model, maxOdluka, kvotaUSD, kontakt }) {
   const err = (m) => Object.assign(new Error(m), { status: 400 });
   // Sve se provjerava prije bilo kakve promjene, da neuspjelo spremanje ne ostavi djelomične postavke.
   const next = { ...current };
@@ -60,6 +67,11 @@ export function saveSettings({ apiKey, model, maxOdluka, kontakt }) {
     const n = Number(maxOdluka);
     if (!Number.isInteger(n) || n < 1 || n > 30) throw err('Broj odluka mora biti između 1 i 30.');
     next.maxOdluka = n;
+  }
+  if (kvotaUSD !== undefined && kvotaUSD !== '') {
+    const k = Number(kvotaUSD);
+    if (!Number.isFinite(k) || k < 0 || k > 100_000) throw err('Kvota mora biti iznos u USD (0 = bez ograničenja).');
+    next.kvotaUSD = Math.round(k * 100) / 100;
   }
   if (kontakt !== undefined) next.kontakt = String(kontakt).trim().slice(0, 200);
   fs.mkdirSync(config.dataDir, { recursive: true });

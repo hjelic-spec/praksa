@@ -14998,6 +14998,17 @@ var config = {
   host: process.env.PRAKSA_HOST ?? "127.0.0.1",
   // Dodatni nazivi pod kojima se poslužitelju pristupa (npr. ured-pc:8080), uz lokalne IP adrese i naziv računala.
   allowedHosts: (process.env.PRAKSA_ALLOWED_HOSTS ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+  // Javna adresa kad aplikacija radi na poslužitelju iza HTTPS proxyja (npr. https://praksa.primjer.hr):
+  // kolačić sesije tada ima oznaku Secure, domena je dopuštena, a poveznice u e-pošti vode na nju.
+  publicUrl: (process.env.PRAKSA_PUBLIC_URL ?? "").trim().replace(/\/+$/, ""),
+  // PRAKSA_TRUST_PROXY=1: IP adresa korisnika uzima se iz X-Forwarded-For koji postavlja proxy
+  // (inače bi svi korisnici imali adresu proxyja, pa bi krive lozinke jednoga blokirale sve).
+  trustProxy: process.env.PRAKSA_TRUST_PROXY === "1",
+  // Sesije se pamte na disku (samo sažeci tokena), pa ponovno pokretanje poslužitelja ne odjavljuje korisnike.
+  sessionsFile: path.join(dataDir, "sesije.json"),
+  // E-pošta (reset lozinke, obavijest o registraciji): npr. smtps://korisnik:lozinka@smtp.primjer.hr:465
+  smtpUrl: process.env.PRAKSA_SMTP_URL ?? "",
+  mailFrom: process.env.PRAKSA_MAIL_FROM ?? "",
   // Pristupni podaci ugrađeni u instalaciju (nije u gitu; izrađuje `npm run postavi-prijavu`).
   bundledAuthFile: process.env.PRAKSA_BUNDLED_AUTH ?? path.join(root2, "src", "prijava-ugradena.json"),
   settingsFile: path.join(dataDir, "postavke.json"),

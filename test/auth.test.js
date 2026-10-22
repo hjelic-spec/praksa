@@ -32,7 +32,7 @@ test('bez prijave: API odbijen, stranica preusmjerena na prijavu', async () => {
   assert.equal(r.status, 302);
   assert.equal(r.location, '/prijava.html');
   assert.equal((await call('/prijava.html')).status, 200);
-  assert.deepEqual((await call('/api/auth/stanje')).data, { postoji: false, prijavljen: false });
+  assert.deepEqual((await call('/api/auth/stanje')).data, { postoji: false, prijavljen: false, resetLozinke: false });
 });
 
 test('postavljanje, prijava, postavke, promjena lozinke i odjava', async () => {

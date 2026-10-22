@@ -18,14 +18,52 @@ function showForm(id) {
   $(`#${id}`).querySelector('input').focus();
 }
 
+// Poveznica iz e-pošte: /prijava.html#reset=<token>. Token se odmah uklanja iz adrese.
+const resetToken = /^#reset=([\w-]+)$/.exec(location.hash)?.[1] ?? null;
+if (resetToken) history.replaceState(null, '', location.pathname);
+
 async function init() {
   const s = await fetch('/api/auth/stanje').then((r) => r.json());
+  $('#reset-poveznica').hidden = !s.resetLozinke;
+  if (resetToken) { showForm('nova-lozinka'); return; }
   if (s.prijavljen) { location.href = '/'; return; }
   showForm(s.postoji ? 'prijava' : 'postavljanje');
 }
 
 $('#na-registraciju').addEventListener('click', (e) => { e.preventDefault(); show(); showForm('registracija'); });
-$('#na-prijavu').addEventListener('click', (e) => { e.preventDefault(); show(); showForm('prijava'); });
+for (const a of document.querySelectorAll('.na-prijavu')) a.addEventListener('click', (e) => { e.preventDefault(); show(); showForm('prijava'); });
+$('#na-zaboravljenu').addEventListener('click', (e) => {
+  e.preventDefault();
+  show();
+  $('#z-email').value = $('#p-korisnik').value.trim();
+  showForm('zaboravljena');
+});
+
+$('#zaboravljena').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  show();
+  try {
+    const r = await post('/api/auth/zaboravljena', { email: $('#z-email').value.trim() });
+    showForm('prijava');
+    show(r.poruka, true);
+  } catch (err) {
+    show(err.message);
+  }
+});
+
+$('#nova-lozinka').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  show();
+  if ($('#n-lozinka').value !== $('#n-lozinka2').value) return show('Lozinke se ne podudaraju.');
+  try {
+    const r = await post('/api/auth/nova-lozinka', { token: resetToken, lozinka: $('#n-lozinka').value });
+    $('#nova-lozinka').reset();
+    showForm('prijava');
+    show(r.poruka, true);
+  } catch (err) {
+    show(err.message);
+  }
+});
 
 $('#prijava').addEventListener('submit', async (e) => {
   e.preventDefault();

@@ -16,8 +16,9 @@ import { supportedFilters } from './sources/odluke.js';
 import * as store from './store.js';
 import { totalCost, selectedDecisions } from './store.js';
 import * as auth from './auth.js';
-import { loadSettings, saveSettings, publicSettings } from './settings.js';
+import { loadSettings, saveSettings, publicSettings, defaultKvotaUSD } from './settings.js';
 import { buildDocx } from './export.js';
+import * as mail from './mail.js';
 import { startPricingUpdates, pricingInfo, refreshPricing } from './pricing.js';
 
 const jobs = new Map();
@@ -51,12 +52,58 @@ const expireJob = (id) => setTimeout(() => jobs.delete(id), JOB_TTL_MS).unref();
 
 const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
+const resetRequests = new Map(); // IP -> vremena zahtjeva u zadnjih 15 minuta
+function allowResetRequest(ip) {
+  const now = Date.now();
+  if (resetRequests.size > 10_000) {
+    for (const [k, v] of resetRequests) if (v.every((t) => now - t >= 15 * 60_000)) resetRequests.delete(k);
+  }
+  const recent = (resetRequests.get(ip) ?? []).filter((t) => now - t < 15 * 60_000);
+  if (recent.length >= 5) return false;
+  recent.push(now);
+  resetRequests.set(ip, recent);
+  return true;
+}
+
+// IP adresa korisnika. Iza proxyja (PRAKSA_TRUST_PROXY=1) zadnja adresa u X-Forwarded-For je ona
+// koju je upisao naš proxy; ranije adrese može podmetnuti sam klijent, pa se ne koriste.
+export function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (config.trustProxy && typeof fwd === 'string' && fwd.trim()) return fwd.split(',').at(-1).trim();
+  return req.socket.remoteAddress ?? '';
+}
+
 // Rute bez prijave: stanje, prvo postavljanje i prijava.
 const publicRoutes = [
   ['GET', /^\/api\/auth\/stanje$/, async (req) => [200, {
     postoji: auth.hasUser(),
     prijavljen: Boolean(auth.getSession(auth.tokenFromCookie(req.headers.cookie))),
+    resetLozinke: mail.configured(),
   }]],
+
+  // Zaboravljena lozinka: poveznica na e-poštu. Odgovor je uvijek isti, da se ne otkriva koje adrese
+  // imaju račun; po IP adresi najviše 5 zahtjeva u 15 minuta.
+  ['POST', /^\/api\/auth\/zaboravljena$/, async (req) => {
+    if (!mail.configured()) return [400, { greska: 'Reset lozinke e-poštom nije postavljen. Obratite se administratoru.' }];
+    if (!allowResetRequest(clientIp(req))) return [429, { greska: 'Previše zahtjeva. Pokušajte za 15 minuta.' }];
+    const { email } = await readBody(req);
+    const r = typeof email === 'string' ? auth.createResetToken(email) : null;
+    if (r) {
+      // Greška pri slanju ide u log, a odgovor ostaje isti (inače bi otkrila da račun postoji).
+      await mail.send({
+        to: r.user.email,
+        subject: 'Nova lozinka – Sudska praksa',
+        text: `Zatražena je nova lozinka za vaš račun.\n\nNovu lozinku postavite na ovoj poveznici (vrijedi jedan sat):\n${config.publicUrl}/prijava.html#reset=${r.token}\n\nAko niste vi zatražili novu lozinku, zanemarite ovu poruku.`,
+      }).catch((e) => console.error('Poruka za novu lozinku nije poslana:', e.message));
+    }
+    return [200, { ok: true, poruka: 'Ako račun s tom adresom postoji, poslali smo poveznicu za novu lozinku.' }];
+  }],
+
+  ['POST', /^\/api\/auth\/nova-lozinka$/, async (req) => {
+    const { token, lozinka } = await readBody(req);
+    await auth.resetPassword(token, lozinka);
+    return [200, { ok: true, poruka: 'Lozinka je promijenjena. Prijavite se novom lozinkom.' }];
+  }],
 
   // Prvo pokretanje: postavlja se administrator (samo dok nema nijednog korisnika).
   ['POST', /^\/api\/auth\/postavljanje$/, async (req) => {
@@ -72,18 +119,34 @@ const publicRoutes = [
   // Registracija: račun čeka odobrenje administratora.
   ['POST', /^\/api\/auth\/registracija$/, async (req) => {
     const b = await readBody(req);
-    await auth.register({ email: b.email, ime: b.ime, lozinka: b.lozinka });
+    const u = await auth.register({ email: b.email, ime: b.ime, lozinka: b.lozinka });
+    // Obavijest administratoru (ako je e-pošta postavljena); neuspjelo slanje ne ruši registraciju.
+    const admin = auth.admin();
+    if (mail.configured() && admin && /@/.test(admin.email)) {
+      mail.send({
+        to: admin.email,
+        subject: 'Novi zahtjev za pristup – Sudska praksa',
+        text: `${u.ime} (${u.email}) traži pristup aplikaciji.\nOdobrite ili odbijte zahtjev u aplikaciji: ${config.publicUrl}/ (Korisnici).`,
+      }).catch((e) => console.error('Obavijest o registraciji nije poslana:', e.message));
+    }
     return [201, { ok: true, poruka: 'Zahtjev je poslan. Moći ćete se prijaviti kad ga administrator odobri.' }];
   }],
 
   ['POST', /^\/api\/auth\/prijava$/, async (req) => {
     const b = await readBody(req);
-    const u = await auth.verify(b.korisnik, b.lozinka, req.socket.remoteAddress);
+    const u = await auth.verify(b.korisnik, b.lozinka, clientIp(req));
     return [200, { ok: true }, { 'Set-Cookie': auth.sessionCookie(auth.createSession(u.id)) }];
   }],
 ];
 
 const monthStart = () => { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString(); };
+
+// Kvota korisnika za tekući mjesec: limit (null = bez ograničenja) i dosadašnja potrošnja.
+async function kvotaStanje(user) {
+  const limitUSD = auth.kvotaFor(user, defaultKvotaUSD());
+  const { usd } = await store.forUser(user.id).usage(monthStart());
+  return { limitUSD, potrosenoUSD: usd };
+}
 
 const routes = [
   ['POST', /^\/api\/auth\/odjava$/, async (req) => {
@@ -118,13 +181,25 @@ const routes = [
     ime: user.ime,
     uloga: user.uloga,
     imaKljuc: publicSettings().imaKljuc,
+    kvota: await kvotaStanje(user),
     naCekanju: user.uloga === 'admin' ? auth.listUsers().filter((u) => u.status === auth.STATUS.CEKA).length : undefined,
   }]],
 
   // Administracija korisnika: popis s potrošnjom u tekućem mjesecu i promjena stanja računa.
   ['GET', /^\/api\/admin\/korisnici$/, async () => {
     const since = monthStart();
-    return [200, await Promise.all(auth.listUsers().map(async (u) => ({ ...u, ovajMjesec: await store.forUser(u.id).usage(since) })))];
+    const def = defaultKvotaUSD();
+    return [200, await Promise.all(auth.listUsers().map(async (u) => ({
+      ...u, ovajMjesec: await store.forUser(u.id).usage(since), kvotaVrijedi: auth.kvotaFor(u, def), kvotaZadana: def > 0 ? def : null,
+    })))];
+  }, 'admin'],
+
+  // Nova nasumična lozinka za korisnika (administrator je prenosi korisniku; prikazuje se samo sada).
+  ['POST', /^\/api\/admin\/korisnici\/([\w-]+)\/lozinka$/, async (req, [id]) => [200, { lozinka: await auth.adminResetPassword(id) }], 'admin'],
+
+  ['POST', /^\/api\/admin\/korisnici\/([\w-]+)\/kvota$/, async (req, [id]) => {
+    const { kvotaUSD } = await readBody(req);
+    return [200, auth.publicUser(auth.setKvota(id, kvotaUSD))];
   }, 'admin'],
 
   ['POST', /^\/api\/admin\/korisnici\/([\w-]+)$/, async (req, [id], res, { user }) => {
@@ -141,10 +216,19 @@ const routes = [
     const opis = str(b.opis, 20_000);
     if (opis.length < 10) return [400, { greska: 'Upit mora imati barem 10 znakova.' }];
     if (!publicSettings().imaKljuc) return [400, { greska: user.uloga === 'admin' ? 'API ključ nije postavljen. Upišite ga u Postavkama.' : 'Pretraga trenutačno nije dostupna (administrator nije postavio API ključ).' }];
+    const kvota = await kvotaStanje(user);
+    if (kvota.limitUSD !== null && kvota.potrosenoUSD >= kvota.limitUSD) {
+      return [429, { greska: `Mjesečna kvota je potrošena ($${kvota.potrosenoUSD.toFixed(2)} od $${kvota.limitUSD.toFixed(2)}). Obratite se administratoru.` }];
+    }
     const predmetId = b.predmetId ? (await store.getPredmet(b.predmetId)).id : (await store.ensureDefaultPredmet()).id;
     const filters = Object.fromEntries(Object.entries(b.filters ?? {}).filter(([, v]) => typeof v === 'string' && v));
     // Kvadratići iznad tražilice; što nije poslano kao true/false ostaje zadano.
     const opcije = Object.fromEntries(Object.keys(DEFAULT_OPCIJE).map((k) => [k, typeof b.opcije?.[k] === 'boolean' ? b.opcije[k] : DEFAULT_OPCIJE[k]]));
+    // Jedna pretraga u tijeku po korisniku: pretrage dijele ograničenje prema odluke.sudovi.hr i kvotu.
+    // Provjera je odmah prije stvaranja posla (bez await između), pa je ne mogu zaobići istovremeni zahtjevi.
+    if ([...jobs.values()].some((j) => j.userId === user.id && j.status === 'u tijeku')) {
+      return [429, { greska: 'Pretraga je već u tijeku. Pričekajte da završi.' }];
+    }
     const id = crypto.randomUUID();
     const job = { userId: user.id, status: 'u tijeku', napredak: [], rezultat: null, greska: null, predmetId, pretragaId: null };
     jobs.set(id, job);
@@ -228,7 +312,12 @@ export function allowedHostsFor(port, host = config.host) {
     names.push(os.hostname(), `${os.hostname()}.local`);
   }
   const set = new Set(names.map((n) => `${n.toLowerCase()}:${port}`));
-  for (const h of config.allowedHosts) set.add(h.includes(':') ? h : `${h}:${port}`);
+  // Iza proxyja preglednik šalje domenu bez porta (443/80), pa se dopušta i bez njega.
+  for (const h of config.allowedHosts) {
+    set.add(h);
+    if (!h.includes(':')) set.add(`${h}:${port}`);
+  }
+  if (config.publicUrl) set.add(new URL(config.publicUrl).host.toLowerCase());
   return set;
 }
 
