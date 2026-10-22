@@ -6,17 +6,20 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
 
-const lastRequestAt = new Map();
+const nextSlot = new Map();
 const cookieJars = new Map();
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Svaki zahtjev prema istom poslužitelju sinkrono rezervira svoj termin (najmanje minDelayMs
+// nakon prethodnog), pa ni istovremeni zahtjevi ne idu prečesto.
 async function throttle(host) {
-  const wait = (lastRequestAt.get(host) ?? 0) + config.minDelayMs - Date.now();
-  if (wait > 0) await sleep(wait);
-  lastRequestAt.set(host, Date.now());
+  const now = Date.now();
+  const slot = Math.max(now, nextSlot.get(host) ?? 0);
+  nextSlot.set(host, slot + config.minDelayMs);
+  if (slot > now) await sleep(slot - now);
 }
 
 function storeCookies(host, res) {
@@ -38,11 +41,18 @@ function cacheFile(key) {
   return path.join(config.cacheDir, crypto.createHash('sha256').update(key).digest('hex') + '.html');
 }
 
-export async function fetchText(url, { method = 'GET', body, useCache = true } = {}) {
+// Predmemorija vrijedi maxAgeMs (zadano 30 dana; rezultati pretrage kraće, jer se odluke objavljuju
+// svakodnevno). refresh: true preskače čitanje, ali novi odgovor sprema (npr. kad je spremljena
+// stranica neispravna).
+export const DEFAULT_MAX_AGE_MS = 30 * 24 * 3600 * 1000;
+
+export async function fetchText(url, { method = 'GET', body, useCache = true, maxAgeMs = DEFAULT_MAX_AGE_MS, refresh = false } = {}) {
   const key = `${method} ${url} ${body ?? ''}`;
-  if (useCache && method === 'GET') {
+  const cacheable = useCache && method === 'GET';
+  if (cacheable && !refresh) {
     try {
-      return await fs.readFile(cacheFile(key), 'utf8');
+      const file = cacheFile(key);
+      if (Date.now() - (await fs.stat(file)).mtimeMs < maxAgeMs) return await fs.readFile(file, 'utf8');
     } catch { /* nije u predmemoriji */ }
   }
   const host = new URL(url).host;
@@ -56,9 +66,13 @@ export async function fetchText(url, { method = 'GET', body, useCache = true } =
   storeCookies(host, res);
   if (!res.ok) throw new Error(`HTTP ${res.status} za ${url}`);
   const text = await res.text();
-  if (useCache && method === 'GET') {
+  if (cacheable) {
+    // Upis preko privremene datoteke: istovremeno čitanje nikad ne vidi napola upisanu stranicu.
     await fs.mkdir(config.cacheDir, { recursive: true });
-    await fs.writeFile(cacheFile(key), text);
+    const file = cacheFile(key);
+    const tmp = `${file}.${process.pid}.${crypto.randomUUID().slice(0, 8)}.tmp`;
+    await fs.writeFile(tmp, text);
+    await fs.rename(tmp, file);
   }
   return text;
 }
