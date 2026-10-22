@@ -168,3 +168,12 @@ test('opcije: isključeno europsko pravo i lokalna zbirka', async () => {
   const e = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], opcije: { pravoEu: true }, deps: { llm, sources: { t: named('t') } } });
   assert.ok(e.odluke.find((d) => d.url === 'x:1').euReference.length > 0);
 });
+
+test('isti upit se tražilici ne šalje dvaput', async () => {
+  const asked = [];
+  const l = { ...llm, async planQuery() { return { ...PLAN, upiti: ['Otkazan let štrajk', 'otkazan  let štrajk ', 'izvanredna okolnost', ''] }; } };
+  const src = { ...source(), async search(q, o) { asked.push(q); return source().search(q, o); } };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: src } } });
+  assert.deepEqual(asked, ['Otkazan let štrajk', 'izvanredna okolnost']);
+  assert.deepEqual(r.plan.upiti, asked);
+});

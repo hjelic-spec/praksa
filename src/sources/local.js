@@ -25,20 +25,31 @@ export async function count() {
   }
 }
 
+// Raščlanjene odluke u memoriji: datoteka se ponovno čita samo kad joj se promijene vrijeme
+// izmjene ili veličina. Pretraga zove loadCorpus za svaki upit (5–8 po pretrazi).
+const parsed = new Map(); // naziv datoteke -> { mtimeMs, size, doc }
+
+async function readDoc(f) {
+  const file = path.join(config.corpusDir, f);
+  const st = await fs.stat(file);
+  const hit = parsed.get(f);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.doc;
+  const raw = await fs.readFile(file, 'utf8');
+  const tekst = /\.html?$/i.test(f) ? decisionTextFromHtml(raw) : raw;
+  const doc = { url: `local:${f}`, naslov: f, tekst, low: tekst.toLowerCase(), izvor: 'lokalna zbirka' };
+  parsed.set(f, { mtimeMs: st.mtimeMs, size: st.size, doc });
+  return doc;
+}
+
 async function loadCorpus() {
   let files = [];
   try {
-    files = await fs.readdir(config.corpusDir);
+    files = (await fs.readdir(config.corpusDir)).filter(isCorpusFile);
   } catch {
     return [];
   }
-  const docs = [];
-  for (const f of files.filter(isCorpusFile)) {
-    const raw = await fs.readFile(path.join(config.corpusDir, f), 'utf8');
-    const tekst = /\.html?$/i.test(f) ? decisionTextFromHtml(raw) : raw;
-    docs.push({ url: `local:${f}`, naslov: f, tekst, izvor: 'lokalna zbirka' });
-  }
-  return docs;
+  for (const f of parsed.keys()) if (!files.includes(f)) parsed.delete(f); // obrisane datoteke
+  return Promise.all(files.map(readDoc));
 }
 
 export async function search(query, { limit = 20 } = {}) {
@@ -47,8 +58,7 @@ export async function search(query, { limit = 20 } = {}) {
   const docs = await loadCorpus();
   return docs
     .map((d) => {
-      const low = d.tekst.toLowerCase();
-      const hits = s.filter((x) => low.includes(x)).length;
+      const hits = s.filter((x) => d.low.includes(x)).length;
       return { d, score: hits / s.length };
     })
     .filter((x) => x.score >= 0.5)
@@ -60,7 +70,6 @@ export async function search(query, { limit = 20 } = {}) {
 export async function fetchDecision(ref) {
   const f = ref.url.replace(/^local:/, '');
   if (f.includes('/') || f.includes('\\')) throw new Error('Neispravan naziv datoteke');
-  const raw = await fs.readFile(path.join(config.corpusDir, f), 'utf8');
-  const tekst = /\.html?$/i.test(f) ? decisionTextFromHtml(raw) : raw;
+  const { tekst } = await readDoc(f);
   return { ...ref, tekst, meta: metadataFromText(tekst) };
 }

@@ -123,9 +123,7 @@ const routes = [
   // Administracija korisnika: popis s potrošnjom u tekućem mjesecu i promjena stanja računa.
   ['GET', /^\/api\/admin\/korisnici$/, async () => {
     const since = monthStart();
-    const out = [];
-    for (const u of auth.listUsers()) out.push({ ...u, ovajMjesec: await store.forUser(u.id).usage(since) });
-    return [200, out];
+    return [200, await Promise.all(auth.listUsers().map(async (u) => ({ ...u, ovajMjesec: await store.forUser(u.id).usage(since) })))];
   }, 'admin'],
 
   ['POST', /^\/api\/admin\/korisnici\/([\w-]+)$/, async (req, [id], res, { user }) => {

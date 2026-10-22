@@ -101,6 +101,12 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, o
   progress({ korak: 'razrada', poruka: 'Razumijem upit i pripremam pretragu…' });
   const plan = await L.planQuery(opis, track);
   const primijenjeniFilteri = mergeFilters(filters, plan);
+  // Isti upit (drukčija velika slova ili razmaci) ne šalje se tražilici dvaput.
+  const seenQ = new Set();
+  plan.upiti = (plan.upiti ?? []).map((q) => q.trim()).filter((q) => {
+    const k = q.toLowerCase().replace(/\s+/g, ' ');
+    return q && !seenQ.has(k) && seenQ.add(k);
+  });
 
   progress({ korak: 'pretrazivanje', poruka: `Pretražujem odluke (${plan.upiti.length} upita)…` });
   const refs = new Map();
