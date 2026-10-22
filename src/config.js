@@ -16,13 +16,18 @@ try {
 }
 
 function readJson(file) {
-  return JSON.parse(fs.readFileSync(path.join(root, file), 'utf8'));
+  return JSON.parse(fs.readFileSync(path.resolve(root, file), 'utf8'));
 }
+
+let odlukeConfig;
 
 export const config = {
   root,
   // Verzija aplikacije (package.json je i u Windows instalaciji); prikazuje se u Postavkama.
-  verzija: readJson('package.json').version,
+  // Čita se tek pri upotrebi: zapakirani skill nema package.json, pa je ondje null.
+  get verzija() {
+    try { return readJson('package.json').version; } catch { return null; }
+  },
   port: Number(process.env.PORT ?? 3000),
   // Model se bira u Postavkama (src/settings.js); PRAKSA_MODEL vrijedi dok se ondje ne odabere drugi.
   model: process.env.PRAKSA_MODEL ?? DEFAULT_MODEL,
@@ -45,7 +50,8 @@ export const config = {
   minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 3000),
   userAgent: process.env.PRAKSA_USER_AGENT ?? 'praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)',
   dataDir,
-  cacheDir: path.join(dataDir, 'cache'),
+  // PRAKSA_CACHE_DIR koristi skill (predmemorija izvan mape skilla); čita se pri svakoj upotrebi.
+  get cacheDir() { return process.env.PRAKSA_CACHE_DIR ?? path.join(dataDir, 'cache'); },
   corpusDir: path.join(dataDir, 'corpus'),
   // Spremljeni predmeti (pretrage, bilješke); sadrže podatke o predmetima ureda i nisu u gitu.
   predmetiDir: process.env.PRAKSA_PREDMETI_DIR ?? path.join(dataDir, 'predmeti'),
@@ -64,5 +70,8 @@ export const config = {
   // Izvori: "odluke" (odluke.sudovi.hr), "local" (data/corpus). Npr. PRAKSA_SOURCES=local
   sources: (process.env.PRAKSA_SOURCES ?? 'odluke,local').split(',').map((s) => s.trim()).filter(Boolean),
   get verifyEuViaSparql() { return process.env.PRAKSA_VERIFY_EU !== '0'; },
-  odluke: readJson('src/sources/odluke.config.json'),
+  // Čita se tek pri prvoj upotrebi, pa PRAKSA_ODLUKE_CONFIG može postaviti i skill na početku izvođenja.
+  get odluke() {
+    return (odlukeConfig ??= readJson(process.env.PRAKSA_ODLUKE_CONFIG ?? 'src/sources/odluke.config.json'));
+  },
 };

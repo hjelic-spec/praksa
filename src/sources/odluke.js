@@ -223,18 +223,20 @@ export function decisionTextFromHtml(html) {
   return $root.text().replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n\n').trim();
 }
 
-export async function fetchDecision(ref) {
-  let html = await fetchText(ref.url);
-  let tekst = decisionTextFromHtml(html);
-  // Stranica bez teksta odluke (npr. spremljena tijekom održavanja stranice) dohvaća se ponovno,
-  // inače bi neispravna kopija u predmemoriji trajno blokirala tu odluku.
-  if (tekst.length < 200) {
-    html = await fetchText(ref.url, { refresh: true });
-    tekst = decisionTextFromHtml(html);
-  }
+// Tekst i metapodaci iz stranice odluke; metapodaci s ploče odluke imaju prednost pred onima iz teksta.
+export function decisionFromHtml(html) {
+  const tekst = decisionTextFromHtml(html);
   const fromText = metadataFromText(tekst);
   const fromHtml = metadataFromHtml(html);
   const meta = Object.fromEntries([...new Set([...Object.keys(fromText), ...Object.keys(fromHtml)])]
     .map((k) => [k, fromHtml[k] ?? fromText[k] ?? null]));
-  return { ...ref, tekst, meta };
+  return { tekst, meta };
+}
+
+export async function fetchDecision(ref) {
+  let d = decisionFromHtml(await fetchText(ref.url));
+  // Stranica bez teksta odluke (npr. spremljena tijekom održavanja stranice) dohvaća se ponovno,
+  // inače bi neispravna kopija u predmemoriji trajno blokirala tu odluku.
+  if (d.tekst.length < 200) d = decisionFromHtml(await fetchText(ref.url, { refresh: true }));
+  return { ...ref, ...d };
 }

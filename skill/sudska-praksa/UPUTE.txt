@@ -1,0 +1,47 @@
+SKILL "sudska-praksa" ZA CLAUDE CODE
+====================================
+
+Pretražuje i analizira odluke hrvatskih sudova s odluke.sudovi.hr prema opisu
+slučaja: provjerava citate u izvornom tekstu, izvlači citirane predmete i
+reference na pravo EU te izrađuje sintezu prakse.
+
+Ovo nije pravni savjet. Rezultate izrađuje jezični model i treba ih provjeriti
+u izvornim odlukama.
+
+POTREBNO
+- Claude Code na vlastitom računalu i vlastiti Claude račun (troši se vaša kvota).
+- Node.js 20.12 ili noviji (provjera: node --version).
+- Pristup stranici odluke.sudovi.hr s vaše mreže.
+
+INSTALACIJA (Windows, PowerShell)
+Raspakirajte ZIP, uđite u raspakiranu mapu "sudska-praksa" i pokrenite:
+
+  $cilj = "$env:USERPROFILE\.claude\skills\sudska-praksa"
+  New-Item -ItemType Directory -Force $cilj | Out-Null
+  Copy-Item -Recurse -Force .\* $cilj
+  Test-Path "$cilj\SKILL.md"        # mora ispisati True
+
+INSTALACIJA (macOS / Linux)
+  mkdir -p ~/.claude/skills/sudska-praksa
+  cp -r ./. ~/.claude/skills/sudska-praksa/
+
+Važno: SKILL.md mora biti izravno u mapi ...\.claude\skills\sudska-praksa\,
+a ne u ...\skills\ ni u ...\skills\sudska-praksa\sudska-praksa\.
+
+PROVJERA BEZ CLAUDEA (ne troši kvotu)
+  node "$env:USERPROFILE\.claude\skills\sudska-praksa\scripts\praksa.mjs" pretrazi "naknada nematerijalne štete"
+U "rezultati" trebaju biti poveznice na https://odluke.sudovi.hr/Document/View?id=...
+
+UPOTREBA
+Zatvorite i ponovno pokrenite Claude Code (skillovi se učitavaju pri pokretanju),
+po mogućnosti u zasebnoj mapi jer skill ondje sprema radne datoteke (praksa-rad).
+Zatim napišite npr.:
+  /sudska-praksa putnik u autobusu ozlijeđen pri naglom kočenju; odgovornost prijevoznika
+
+PRISTOJNOST PREMA STRANICI
+Skripta šalje najviše jedan zahtjev u 3 sekunde i sprema stranice u
+predmemoriju (~/.cache/praksa-skill).
+
+LICENCE
+Biblioteke zapakirane u scripts/praksa.mjs i njihove licence navedene su u
+THIRD_PARTY_LICENSES.txt.

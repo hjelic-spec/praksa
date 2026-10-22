@@ -158,6 +158,52 @@ Ručno osvježavanje: Postavke → „Osvježi cjenik sada“. `PRAKSA_PRICING_R
 Za zahtjeve odbijene od sigurnosnih klasifikatora uključen je poslužiteljski `fallbacks: "default"`
 (beta `server-side-fallback-2026-07-01`) – zahtjev se tada automatski ponovi na preporučenom zamjenskom modelu.
 
+## Skill za Claude (`skill/sudska-praksa`)
+
+Isti posao kao web aplikacija, ali unutar Claudea: Claude razrađuje opis, čita i ocjenjuje odluke i piše
+sintezu, a skripta `scripts/praksa.mjs` radi pretraživanje, dohvat, regex ekstrakciju, provjeru citata
+i povezivanje predmeta. Troši se kvota korisnikove Claude pretplate, ne API ključ; nema poslužitelja.
+
+Skripta je jedna datoteka (cheerio je zapakiran unutra), treba joj samo Node.js 20.12+.
+Izvor je `skill/praksa-cli.js`; nakon izmjena u njemu ili u `src/` pokrenite `npm run skill:build`
+(test `npm test` javlja grešku ako zapakirana skripta nije osvježena).
+
+**Instalacija za Claude Code** (osobni skill, vrijedi u svim projektima):
+
+```powershell
+# Windows (PowerShell), iz mape repozitorija. Mapa skilla se izričito stvara i kopira se samo
+# njezin sadržaj (\*): Copy-Item -Recurse inače ovisno o tome postoji li odredište kopira ili
+# sadržaj umjesto mape ili mapu unutar mape, a Claude Code skill tada ne pronalazi.
+$cilj = "$env:USERPROFILE\.claude\skills\sudska-praksa"
+New-Item -ItemType Directory -Force $cilj | Out-Null
+Copy-Item -Recurse -Force skill\sudska-praksa\* $cilj
+Test-Path "$cilj\scripts\praksa.mjs"   # mora ispisati True
+```
+
+```bash
+# Linux / macOS
+mkdir -p ~/.claude/skills/sudska-praksa && cp -r skill/sudska-praksa/. ~/.claude/skills/sudska-praksa/
+```
+
+Zatim u Claude Codeu npr. „Nađi sudsku praksu: putnik je ozlijeđen kad je autobus naglo zakočio.”
+
+**Dijeljenje s drugima:** mapa `skill/sudska-praksa` je samostalna (SKILL.md, zapakirana skripta, `UPUTE.txt`
+za primatelja i `THIRD_PARTY_LICENSES.txt` s licencama zapakiranih biblioteka, koje se izrađuju pri
+`npm run skill:build`). ZIP za slanje (PowerShell, iz mape repozitorija):
+
+```powershell
+Compress-Archive -Path skill\sudska-praksa -DestinationPath sudska-praksa.zip -Force
+```
+
+Ograničenja koja treba znati:
+- skripta dohvaća odluke s računala na kojem radi; u Claude Codeu ili Coworku na vlastitom računalu to je
+  vaša mreža. U pregledniku na claude.ai skripte se izvode u Anthropicovu okruženju čiji je mrežni pristup
+  ograničen, pa nije provjereno može li tamo doći do odluke.sudovi.hr;
+- skill koristi isti adapter, istu `odluke.config.json` (provjerenu 14.10.2026., vidi gore) i isti pristojan
+  HTTP klijent (jedan zahtjev u 3 s, predmemorija s rokom); konfiguracija i kod iz `src/` pakiraju se u skill
+  pri izgradnji, pa nakon njihove izmjene ponovno pokrenite `npm run skill:build`;
+- dosljednost ovisi o tome koliko Claude slijedi upute iz `SKILL.md`; ono što je provjerljivo radi skripta.
+
 ## Lokalna zbirka
 
 Odluke spremljene kao `.txt`, `.md` ili `.html` u `data/corpus/` (u Windows aplikaciji `%APPDATA%\Praksa\corpus`)
@@ -190,6 +236,10 @@ src/extract.js           regex ekstrakcija: poslovni brojevi, ECLI, EU akti → 
 src/eu.js                provjera CELEX-a u CELLAR SPARQL endpointu
 src/sources/odluke.js    adapter za odluke.sudovi.hr (+ odluke.config.json)
 src/sources/local.js     lokalna zbirka
+src/related.js           povezivanje predmeta (zajedničko aplikaciji i skillu)
 scripts/probe-odluke.js  ispitivanje stvarne strukture stranice
+scripts/build-skill.js   pakiranje skilla (npm run skill:build)
+skill/praksa-cli.js      naredbe skilla (izvor)
+skill/sudska-praksa/     skill: SKILL.md + zapakirana skripta
 public/                  sučelje
 ```
