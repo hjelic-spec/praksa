@@ -56,7 +56,7 @@ const llm = {
 test('tijek obrade: provjere citata, povezivanje, prag, navod i filtar iz upita', async () => {
   let usedFilters;
   const src = { ...source(), async search(q, o) { usedFilters = o.filters; return source().search(q, o); } };
-  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm, sources: { t: src } } });
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], opcije: { pravoEu: true }, deps: { llm, sources: { t: src } } });
   assert.deepEqual(usedFilters, { datumOd: '2020-01-01' }, 'datum izveden iz upita');
   assert.equal(r.odluke.length, 4);
   const byUrl = Object.fromEntries(r.odluke.map((d) => [d.url, d]));
@@ -155,10 +155,16 @@ test('opcije: isključeno europsko pravo i lokalna zbirka', async () => {
   assert.equal(r.odgovor.veza_s_pravom_eu, '');
   assert.deepEqual(r.opcije, { pravoEu: false, lokalnaZbirka: false });
 
-  // Zadano: oboje uključeno, kao prije.
+  // Zadano: europsko pravo isključeno, lokalna zbirka uključena.
   seen.searched = [];
-  const z = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t', 'local'], deps: { llm, sources: { t: named('t'), local: named('local') } } });
+  seen.assess = [];
+  const z = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t', 'local'], deps: { llm: l, sources: { t: named('t'), local: named('local') } } });
   assert.deepEqual([...new Set(seen.searched)], ['t', 'local']);
-  assert.ok(z.odluke.find((d) => d.url === 'x:1').euReference.length > 0);
-  assert.deepEqual(z.opcije, { pravoEu: true, lokalnaZbirka: true });
+  assert.deepEqual(z.odluke.find((d) => d.url === 'x:1').euReference, []);
+  assert.ok(seen.assess.every((o) => o.pravoEu === false));
+  assert.deepEqual(z.opcije, { pravoEu: false, lokalnaZbirka: true });
+
+  // Izričito uključeno europsko pravo.
+  const e = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], opcije: { pravoEu: true }, deps: { llm, sources: { t: named('t') } } });
+  assert.ok(e.odluke.find((d) => d.url === 'x:1').euReference.length > 0);
 });

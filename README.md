@@ -161,7 +161,7 @@ pretražuju se zajedno s online izvorom (korisno za odluke s portala Vrhovnog su
 
 Iznad polja za pretragu su dva kvadratića; izbor se pamti u pregledniku i sprema uz svaku pretragu.
 
-- **Europsko pravo (EU i EKLJP)** – zadano uključeno. Isključeno: ne izvlače se reference na pravo EU i EKLJP,
+- **Europsko pravo (EU i EKLJP)** – zadano isključeno. Dok je isključeno: ne izvlače se reference na pravo EU i EKLJP,
   ne provjeravaju se u CELLAR-u, model ne iznosi pretpostavke o vezi s pravom EU i odgovor nema odjeljak o pravu EU
   (ta se polja prazne u kodu, neovisno o modelu).
 - **Lokalna zbirka** – pretražuje i lokalnu zbirku; prikazuje broj odluka u njoj, a kad je prazna, onemogućen je

@@ -85,7 +85,8 @@ const byRelevance = (a, b) => b.analiza.relevantnost - a.analiza.relevantnost ||
 
 // opcije (kvadratići iznad tražilice): pravoEu – reference na pravo EU i EKLJP, provjera u CELLAR-u
 // i pretpostavke modela o vezi s pravom EU; lokalnaZbirka – pretražuje se i data/corpus.
-export const DEFAULT_OPCIJE = { pravoEu: true, lokalnaZbirka: true };
+// Europsko pravo je zadano isključeno: uključuje ga korisnik kad mu treba.
+export const DEFAULT_OPCIJE = { pravoEu: false, lokalnaZbirka: true };
 
 export async function runQuery({ opis, filters = {}, sources = config.sources, opcije = {}, deps = {} }, progress = () => {}) {
   const L = deps.llm ?? llm;
