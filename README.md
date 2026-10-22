@@ -63,7 +63,7 @@ poslovni broj `pb`, ECLI `ecli`); u sučelju se pojavljuju kad se dodaju u `filt
 
 Ograničenja koja nisu riješena:
 - odluke dostupne samo kao PDF/DOC nisu podržane (tekst se ne izvlači);
-- uvjeti korištenja i `robots.txt` stranice nisu provjereni – provjerite ih prije šire upotrebe. Adapter šalje najviše jedan zahtjev u 3 s i sprema stranice u `data/cache`.
+- uvjeti korištenja i `robots.txt` stranice nisu provjereni – provjerite ih prije šire upotrebe. Adapter šalje najviše jedan zahtjev u 3 s i sprema stranice u `data/cache` (rezultate pretrage 6 sati, odluke 30 dana).
 
 ## Web u uredu (više korisnika)
 
@@ -126,19 +126,24 @@ Postavke (varijable okruženja):
 
 | Varijabla | Zadano | Značenje |
 |---|---|---|
-| `PRAKSA_MODEL` | `claude-opus-5-5` | model |
+| `PRAKSA_MODEL` | `claude-opus-5-5` | zadani model; administrator ga mijenja u Postavkama (izbor ima prednost) |
 | `PRAKSA_MAX_DECISIONS` | 8 | odluka za detaljnu analizu po upitu (svaka = jedan API poziv) |
 | `PRAKSA_MAX_CANDIDATES` | 60 | kandidata za predselekciju po isječcima |
 | `PRAKSA_RESULTS_PER_QUERY` | 20 | rezultata tražilice po upitu (2 stranice) |
 | `PRAKSA_RELEVANCE_THRESHOLD` | 50 | prag za glavni popis rezultata |
 | `PRAKSA_MAX_CHARS` | 150000 | dulje odluke se skraćuju za analizu (prikazuje se oznaka) |
 | `PRAKSA_SOURCES` | `odluke,local` | izvori |
-| `PRAKSA_MIN_DELAY_MS` | 3000 | razmak između zahtjeva prema istom poslužitelju |
+| `PRAKSA_MIN_DELAY_MS` | 3000 | razmak između zahtjeva prema istom poslužitelju (vrijedi i za istovremene zahtjeve) |
+| `PRAKSA_CONCURRENCY` | 8 | odluka koje se analiziraju istovremeno (pozivi modela su najsporiji korak) |
+| `PRAKSA_SEARCH_CONCURRENCY` | 3 | upita tražilici istovremeno |
 | `PRAKSA_VERIFY_EU` | 1 | `0` isključuje provjeru CELEX-a u CELLAR-u |
 | `PRAKSA_USER_AGENT` | … | upišite kontakt kako bi vas operater stranice mogao kontaktirati |
 
 Troškovi: jedan upit = 1 poziv za razumijevanje upita + 1 za predselekciju + do `PRAKSA_MAX_DECISIONS` poziva za analizu + 1 za odgovor.
-Duge odluke znače mnogo ulaznih tokena. Trošak svake pretrage prikazuje se u sučelju, a broj odluka mijenja se i u Postavkama.
+Duge odluke znače mnogo ulaznih tokena. Trošak svake pretrage prikazuje se u sučelju (uz model koji je odgovorio),
+a broj odluka i model mijenjaju se u Postavkama. Ponuđeni modeli (`src/models.js`): Claude Opus 5.5 (zadani),
+Sonnet 5.5 (upola jeftiniji), Haiku 5.5 (najjeftiniji, slabija analiza) i Fable 5.1 (najsposobniji, oko 2,5 puta skuplji).
+Kvaliteta analize na jeftinijim modelima nije izmjerena – usporedite rezultate na istim upitima prije prelaska.
 
 Cjenik se **osvježava automatski**: pri pokretanju (ako je stariji od jednog dana) i zatim svaki dan aplikacija dohvaća
 službenu tablicu cijena s `platform.claude.com/docs/en/about-claude/pricing.md`, provjerava je (dovoljno modela, uključen
@@ -190,15 +195,25 @@ Ograničenja koja treba znati:
 - skripta dohvaća odluke s računala na kojem radi; u Claude Codeu ili Coworku na vlastitom računalu to je
   vaša mreža. U pregledniku na claude.ai skripte se izvode u Anthropicovu okruženju čiji je mrežni pristup
   ograničen, pa nije provjereno može li tamo doći do odluke.sudovi.hr;
-- skill koristi isti adapter i istu `odluke.config.json` (provjerenu 14.10.2026., vidi gore), ali je sam skill
-  na stvarnoj stranici još neisproban; konfiguracija se pri izgradnji kopira u skill, pa nakon njezine izmjene
-  ponovno pokrenite `npm run skill:build`;
+- skill koristi isti adapter, istu `odluke.config.json` (provjerenu 14.10.2026., vidi gore) i isti pristojan
+  HTTP klijent (jedan zahtjev u 3 s, predmemorija s rokom); konfiguracija i kod iz `src/` pakiraju se u skill
+  pri izgradnji, pa nakon njihove izmjene ponovno pokrenite `npm run skill:build`;
 - dosljednost ovisi o tome koliko Claude slijedi upute iz `SKILL.md`; ono što je provjerljivo radi skripta.
 
 ## Lokalna zbirka
 
-Odluke spremljene kao `.txt`, `.md` ili `.html` u `data/corpus/` pretražuju se zajedno s online izvorom
-(korisno za odluke s portala Vrhovnog suda ili za rad bez mreže).
+Odluke spremljene kao `.txt`, `.md` ili `.html` u `data/corpus/` (u Windows aplikaciji `%APPDATA%\Praksa\corpus`)
+pretražuju se zajedno s online izvorom (korisno za odluke s portala Vrhovnog suda ili za rad bez mreže).
+
+## Opcije pretraživanja
+
+Iznad polja za pretragu su dva kvadratića; izbor se pamti u pregledniku i sprema uz svaku pretragu.
+
+- **Europsko pravo (EU i EKLJP)** – zadano isključeno. Dok je isključeno: ne izvlače se reference na pravo EU i EKLJP,
+  ne provjeravaju se u CELLAR-u, model ne iznosi pretpostavke o vezi s pravom EU i odgovor nema odjeljak o pravu EU
+  (ta se polja prazne u kodu, neovisno o modelu).
+- **Lokalna zbirka** – pretražuje i lokalnu zbirku; prikazuje broj odluka u njoj, a kad je prazna, onemogućen je
+  (administrator vidi u koju mapu dodati odluke). Osim odluke.sudovi.hr to je trenutno jedini izvor.
 
 ## Struktura
 

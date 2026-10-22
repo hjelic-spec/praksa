@@ -50,6 +50,10 @@ button.secondary { background: transparent; color: var(--accent); border: 1px so
 .searchbox:focus-within { border-color: var(--accent); }
 .searchbox textarea { flex: 1; border: 0; background: transparent; resize: none; padding: 6px 0; line-height: 1.45; outline: none; min-height: 34px; }
 .searchbox button { border-radius: 20px; padding: 8px 22px; }
+.opcije { display: flex; gap: 6px 20px; justify-content: center; flex-wrap: wrap; margin: 0 0 10px; font-size: .9rem; }
+.opcije label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.opcije input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.opcije label.onemoguceno { cursor: default; color: var(--muted); }
 .chips { display: flex; flex-direction: column; gap: 8px; margin: 18px auto 0; max-width: 680px; }
 .chip { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 18px; padding: 7px 14px; font-size: .9rem; text-align: left; }
 .chip:hover { border-color: var(--accent); }

@@ -14934,6 +14934,11 @@ var load = getLoad(parse7, (dom, options) => options._useHtmlParser2 ? esm_defau
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// src/models.js
+var DEFAULT_MODEL = "claude-opus-5-5";
+
+// src/config.js
 var root2 = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 var dataDir = process.env.PRAKSA_DATA_DIR ?? path.join(root2, "data");
 try {
@@ -14948,7 +14953,8 @@ var odlukeConfig;
 var config = {
   root: root2,
   port: Number(process.env.PORT ?? 3e3),
-  model: process.env.PRAKSA_MODEL ?? "claude-opus-5-5",
+  // Model se bira u Postavkama (src/settings.js); PRAKSA_MODEL vrijedi dok se ondje ne odabere drugi.
+  model: process.env.PRAKSA_MODEL ?? DEFAULT_MODEL,
   // Koliko odluka najviše dohvatiti i analizirati po upitu (svaka analiza je jedan API poziv).
   maxDecisions: Number(process.env.PRAKSA_MAX_DECISIONS ?? 8),
   // Koliko kandidata (iz rezultata tražilice) model pregleda po isječcima prije odabira za analizu.
@@ -14959,7 +14965,11 @@ var config = {
   relevanceThreshold: Number(process.env.PRAKSA_RELEVANCE_THRESHOLD ?? 50),
   // Odluke dulje od ovoga se skraćuju prije analize; skraćivanje se uvijek prikazuje korisniku.
   maxDecisionChars: Number(process.env.PRAKSA_MAX_CHARS ?? 15e4),
-  analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 3),
+  // Koliko se odluka analizira istovremeno (pozivi modela su najsporiji korak; dohvat stranica
+  // ionako ograničava minDelayMs). Zadano: sve odabrane odluke odjednom, najviše 8.
+  analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 8),
+  // Koliko upita tražilici ide istovremeno (svaki zahtjev i dalje poštuje minDelayMs).
+  searchConcurrency: Number(process.env.PRAKSA_SEARCH_CONCURRENCY ?? 3),
   // Najmanji razmak između zahtjeva prema istom poslužitelju (odluke.sudovi.hr): jedan zahtjev u 3 s.
   minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 3e3),
   userAgent: process.env.PRAKSA_USER_AGENT ?? "praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)",
@@ -14999,15 +15009,16 @@ var config = {
 import fs2 from "node:fs/promises";
 import path2 from "node:path";
 import crypto from "node:crypto";
-var lastRequestAt = /* @__PURE__ */ new Map();
+var nextSlot = /* @__PURE__ */ new Map();
 var cookieJars = /* @__PURE__ */ new Map();
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 async function throttle(host) {
-  const wait = (lastRequestAt.get(host) ?? 0) + config.minDelayMs - Date.now();
-  if (wait > 0) await sleep(wait);
-  lastRequestAt.set(host, Date.now());
+  const now = Date.now();
+  const slot = Math.max(now, nextSlot.get(host) ?? 0);
+  nextSlot.set(host, slot + config.minDelayMs);
+  if (slot > now) await sleep(slot - now);
 }
 function storeCookies(host, res) {
   const jar = cookieJars.get(host) ?? /* @__PURE__ */ new Map();
@@ -15025,11 +15036,14 @@ function cookieHeader(host) {
 function cacheFile(key) {
   return path2.join(config.cacheDir, crypto.createHash("sha256").update(key).digest("hex") + ".html");
 }
-async function fetchText(url, { method = "GET", body, useCache = true } = {}) {
+var DEFAULT_MAX_AGE_MS = 30 * 24 * 3600 * 1e3;
+async function fetchText(url, { method = "GET", body, useCache = true, maxAgeMs = DEFAULT_MAX_AGE_MS, refresh = false } = {}) {
   const key = `${method} ${url} ${body ?? ""}`;
-  if (useCache && method === "GET") {
+  const cacheable = useCache && method === "GET";
+  if (cacheable && !refresh) {
     try {
-      return await fs2.readFile(cacheFile(key), "utf8");
+      const file = cacheFile(key);
+      if (Date.now() - (await fs2.stat(file)).mtimeMs < maxAgeMs) return await fs2.readFile(file, "utf8");
     } catch {
     }
   }
@@ -15043,9 +15057,12 @@ async function fetchText(url, { method = "GET", body, useCache = true } = {}) {
   storeCookies(host, res);
   if (!res.ok) throw new Error(`HTTP ${res.status} za ${url}`);
   const text3 = await res.text();
-  if (useCache && method === "GET") {
+  if (cacheable) {
     await fs2.mkdir(config.cacheDir, { recursive: true });
-    await fs2.writeFile(cacheFile(key), text3);
+    const file = cacheFile(key);
+    const tmp = `${file}.${process.pid}.${crypto.randomUUID().slice(0, 8)}.tmp`;
+    await fs2.writeFile(tmp, text3);
+    await fs2.rename(tmp, file);
   }
   return text3;
 }
@@ -15166,6 +15183,7 @@ function quoteInText(quote, text3) {
 }
 
 // src/sources/odluke.js
+var SEARCH_MAX_AGE_MS = 6 * 3600 * 1e3;
 var cfg = () => config.odluke;
 var abs = (href, base) => new URL(href, base).toString();
 function pickSearchForm(html3, pageUrl) {
@@ -15274,7 +15292,7 @@ async function firstPage(query, filters2) {
     if (!c.search.template) throw new Error("odluke.config.json: search.template nije postavljen");
     const url2 = new URL(c.search.template.replace("{q}", encodeURIComponent(query)), c.baseUrl);
     for (const [k, v] of Object.entries(params)) url2.searchParams.set(k, v);
-    return { html: await fetchText(url2.toString()), url: url2.toString() };
+    return { html: await fetchText(url2.toString(), { maxAgeMs: SEARCH_MAX_AGE_MS }), url: url2.toString() };
   }
   const pageHtml = await fetchText(searchPage, { useCache: false });
   const form = pickSearchForm(pageHtml, searchPage);
@@ -15290,7 +15308,7 @@ async function firstPage(query, filters2) {
   }
   const url = new URL(form.action);
   for (const [k, v] of body) url.searchParams.append(k, v);
-  return { html: await fetchText(url.toString()), url: url.toString() };
+  return { html: await fetchText(url.toString(), { maxAgeMs: SEARCH_MAX_AGE_MS }), url: url.toString() };
 }
 async function search(query, { filters: filters2, limit = 20 } = {}) {
   let { html: html3, url } = await firstPage(query, filters2);
@@ -15300,7 +15318,11 @@ async function search(query, { filters: filters2, limit = 20 } = {}) {
     out.push(...results);
     if (out.length >= limit || !next2) break;
     url = next2;
-    html3 = await fetchText(next2);
+    try {
+      html3 = await fetchText(next2, { maxAgeMs: SEARCH_MAX_AGE_MS });
+    } catch {
+      break;
+    }
   }
   return out.slice(0, limit).map((r) => ({ ...r, izvor: "odluke.sudovi.hr" }));
 }
@@ -15343,7 +15365,9 @@ function decisionFromHtml(html3) {
   return { tekst, meta };
 }
 async function fetchDecision(ref) {
-  return { ...ref, ...decisionFromHtml(await fetchText(ref.url)) };
+  let d = decisionFromHtml(await fetchText(ref.url));
+  if (d.tekst.length < 200) d = decisionFromHtml(await fetchText(ref.url, { refresh: true }));
+  return { ...ref, ...d };
 }
 
 // src/related.js

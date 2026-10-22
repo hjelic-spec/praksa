@@ -56,7 +56,7 @@ const llm = {
 test('tijek obrade: provjere citata, povezivanje, prag, navod i filtar iz upita', async () => {
   let usedFilters;
   const src = { ...source(), async search(q, o) { usedFilters = o.filters; return source().search(q, o); } };
-  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm, sources: { t: src } } });
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], opcije: { pravoEu: true }, deps: { llm, sources: { t: src } } });
   assert.deepEqual(usedFilters, { datumOd: '2020-01-01' }, 'datum izveden iz upita');
   assert.equal(r.odluke.length, 4);
   const byUrl = Object.fromEntries(r.odluke.map((d) => [d.url, d]));
@@ -125,4 +125,82 @@ test('jedna greška tražilice ne prekida ostale upite; neispravan datum iz mode
   assert.deepEqual(asked, ['a', 'b', 'c']);
   assert.deepEqual(filters, { datumDo: '2024-12-31' });
   assert.ok(r.upozorenja.some((u) => u.includes('istek vremena')));
+});
+
+test('opcije: isključeno europsko pravo i lokalna zbirka', async () => {
+  const seen = { assess: [], answer: [], searched: [] };
+  const l = {
+    ...llm,
+    // Model "ne posluša" uputu i ipak vrati pretpostavke o pravu EU – pipeline ih mora ukloniti.
+    async assessDecision(o, p, d, t, track, opc) {
+      seen.assess.push(opc);
+      return { ...(await llm.assessDecision(o, p, d)), moguce_eu_poveznice: [{ akt: 'Direktiva 93/13/EEZ', obrazlozenje: 'x' }] };
+    },
+    async answerQuery(o, p, items, track, opc) {
+      seen.answer.push(opc);
+      return { ...(await llm.answerQuery(o, p, items)), veza_s_pravom_eu: 'Uredba 261/2004' };
+    },
+  };
+  const named = (name) => ({ ...source(), async search(q, o) { seen.searched.push(name); return source().search(q, o); } });
+  const r = await runQuery({
+    opis: 'otkazan let zbog štrajka', sources: ['t', 'local'], opcije: { pravoEu: false, lokalnaZbirka: false },
+    deps: { llm: l, sources: { t: named('t'), local: named('local') } },
+  });
+  assert.deepEqual([...new Set(seen.searched)], ['t'], 'lokalna zbirka se ne pretražuje');
+  assert.ok(seen.assess.every((o) => o.pravoEu === false) && seen.answer[0].pravoEu === false, 'model dobiva uputu');
+  const d1 = r.odluke.find((d) => d.url === 'x:1');
+  assert.deepEqual(d1.euReference, [], 'nema izvlačenja ni provjere EU referenci');
+  assert.equal(d1.ekljp, false);
+  assert.ok(r.odluke.every((d) => d.analiza.moguce_eu_poveznice.length === 0), 'pretpostavke modela uklonjene');
+  assert.equal(r.odgovor.veza_s_pravom_eu, '');
+  assert.deepEqual(r.opcije, { pravoEu: false, lokalnaZbirka: false });
+
+  // Zadano: europsko pravo isključeno, lokalna zbirka uključena.
+  seen.searched = [];
+  seen.assess = [];
+  const z = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t', 'local'], deps: { llm: l, sources: { t: named('t'), local: named('local') } } });
+  assert.deepEqual([...new Set(seen.searched)], ['t', 'local']);
+  assert.deepEqual(z.odluke.find((d) => d.url === 'x:1').euReference, []);
+  assert.ok(seen.assess.every((o) => o.pravoEu === false));
+  assert.deepEqual(z.opcije, { pravoEu: false, lokalnaZbirka: true });
+
+  // Izričito uključeno europsko pravo.
+  const e = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], opcije: { pravoEu: true }, deps: { llm, sources: { t: named('t') } } });
+  assert.ok(e.odluke.find((d) => d.url === 'x:1').euReference.length > 0);
+});
+
+test('isti upit se tražilici ne šalje dvaput', async () => {
+  const asked = [];
+  const l = { ...llm, async planQuery() { return { ...PLAN, upiti: ['Otkazan let štrajk', 'otkazan  let štrajk ', 'izvanredna okolnost', ''] }; } };
+  const src = { ...source(), async search(q, o) { asked.push(q); return source().search(q, o); } };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: src } } });
+  assert.deepEqual(asked, ['Otkazan let štrajk', 'izvanredna okolnost']);
+  assert.deepEqual(r.plan.upiti, asked);
+});
+
+test('izvor koji ne radi: nakon tri neuspjela upita ostali se ne šalju', async () => {
+  let calls = 0;
+  const dead = { async search() { calls++; throw new Error('ENOTFOUND'); }, async fetchDecision() { throw new Error('x'); } };
+  const l = { ...llm, async planQuery() { return { ...PLAN, upiti: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }; } };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: dead } } });
+  assert.equal(calls, 3);
+  assert.equal(r.upozorenja.filter((u) => u.includes('ENOTFOUND')).length, 3);
+  assert.equal(r.odluke.length, 0);
+});
+
+test('odluke se analiziraju istovremeno, a rezultati spajaju redom upita', async () => {
+  let active = 0;
+  let peak = 0;
+  const l = {
+    ...llm,
+    async assessDecision(...a) {
+      peak = Math.max(peak, ++active);
+      await new Promise((res) => setTimeout(res, 30));
+      active--;
+      return llm.assessDecision(...a);
+    },
+  };
+  const r = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t'], deps: { llm: l, sources: { t: source() } } });
+  assert.equal(peak, 4, 'sve četiri odluke odjednom (PRAKSA_MAX_DECISIONS=4)');
+  assert.equal(r.odluke.length, 4);
 });

@@ -24,6 +24,12 @@
     <section id="trazilica">
       <h1 class="logo">Sudska praksa</h1>
       <p class="sub">Opišite slučaj ili pravno pitanje – pronaći ćemo presedane hrvatskih sudova.</p>
+      <div id="opcije" class="opcije" role="group" aria-label="Opcije pretraživanja">
+        <label title="Reference na direktive, uredbe, predmete Suda EU i EKLJP u odlukama te procjena veze s pravom EU">
+          <input type="checkbox" id="opc-eu"> Europsko pravo <span class="meta">(EU i EKLJP)</span></label>
+        <label id="opc-lokalno-oznaka" title="Uz odluke.sudovi.hr pretražuju se i odluke spremljene u lokalnu zbirku (mapa corpus u podacima aplikacije)">
+          <input type="checkbox" id="opc-lokalno" checked> Lokalna zbirka <span id="opc-lokalno-broj" class="meta"></span></label>
+      </div>
       <form id="upit" class="searchbox">
         <textarea id="opis" rows="1" required minlength="10" aria-label="Opis traženja"
           placeholder="Opišite što tražite…"></textarea>
@@ -77,6 +83,9 @@
       <label for="api-kljuc">Anthropic API ključ</label>
       <input id="api-kljuc" type="password" autocomplete="off" placeholder="sk-ant-… (prazno = bez promjene)">
       <p id="kljuc-stanje" class="meta"></p>
+      <label for="model">Model <span class="meta">(vrijedi za sve korisnike, od sljedeće pretrage)</span></label>
+      <select id="model"></select>
+      <p id="model-opis" class="meta"></p>
       <label for="max-odluka">Najviše odluka za detaljnu analizu <span class="meta">(svaka je jedan poziv modela)</span></label>
       <input id="max-odluka" type="number" min="1" max="30">
       <label for="kontakt">Kontakt e-pošta za odluke.sudovi.hr</label>

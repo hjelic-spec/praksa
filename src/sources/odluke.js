@@ -11,6 +11,9 @@
 import * as cheerio from 'cheerio';
 import { config } from '../config.js';
 import { fetchText } from '../http.js';
+
+// Rezultati pretrage u predmemoriji vrijede kratko: nove odluke objavljuju se svakodnevno.
+const SEARCH_MAX_AGE_MS = 6 * 3600 * 1000;
 import { extractCaseNumbers, extractEcli, normalizeWs } from '../extract.js';
 
 const cfg = () => config.odluke;
@@ -143,7 +146,7 @@ export async function firstPage(query, filters) {
     if (!c.search.template) throw new Error('odluke.config.json: search.template nije postavljen');
     const url = new URL(c.search.template.replace('{q}', encodeURIComponent(query)), c.baseUrl);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-    return { html: await fetchText(url.toString()), url: url.toString() };
+    return { html: await fetchText(url.toString(), { maxAgeMs: SEARCH_MAX_AGE_MS }), url: url.toString() };
   }
 
   const pageHtml = await fetchText(searchPage, { useCache: false });
@@ -163,7 +166,7 @@ export async function firstPage(query, filters) {
   }
   const url = new URL(form.action);
   for (const [k, v] of body) url.searchParams.append(k, v);
-  return { html: await fetchText(url.toString()), url: url.toString() };
+  return { html: await fetchText(url.toString(), { maxAgeMs: SEARCH_MAX_AGE_MS }), url: url.toString() };
 }
 
 export async function search(query, { filters, limit = 20 } = {}) {
@@ -174,7 +177,12 @@ export async function search(query, { filters, limit = 20 } = {}) {
     out.push(...results);
     if (out.length >= limit || !next) break;
     url = next;
-    html = await fetchText(next);
+    // Greška na sljedećoj stranici ne smije poništiti rezultate koji su već pronađeni.
+    try {
+      html = await fetchText(next, { maxAgeMs: SEARCH_MAX_AGE_MS });
+    } catch {
+      break;
+    }
   }
   return out.slice(0, limit).map((r) => ({ ...r, izvor: 'odluke.sudovi.hr' }));
 }
@@ -226,5 +234,9 @@ export function decisionFromHtml(html) {
 }
 
 export async function fetchDecision(ref) {
-  return { ...ref, ...decisionFromHtml(await fetchText(ref.url)) };
+  let d = decisionFromHtml(await fetchText(ref.url));
+  // Stranica bez teksta odluke (npr. spremljena tijekom održavanja stranice) dohvaća se ponovno,
+  // inače bi neispravna kopija u predmemoriji trajno blokirala tu odluku.
+  if (d.tekst.length < 200) d = decisionFromHtml(await fetchText(ref.url, { refresh: true }));
+  return { ...ref, ...d };
 }
