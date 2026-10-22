@@ -21,6 +21,8 @@ function readJson(file) {
 
 export const config = {
   root,
+  // Verzija aplikacije (package.json je i u Windows instalaciji); prikazuje se u Postavkama.
+  verzija: readJson('package.json').version,
   port: Number(process.env.PORT ?? 3000),
   // Model se bira u Postavkama (src/settings.js); PRAKSA_MODEL vrijedi dok se ondje ne odabere drugi.
   model: process.env.PRAKSA_MODEL ?? DEFAULT_MODEL,
