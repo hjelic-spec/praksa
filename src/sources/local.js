@@ -14,6 +14,17 @@ export function stems(query) {
   return [...new Set(query.toLowerCase().split(/[^\p{L}\d]+/u).filter((w) => w.length >= 4).map((w) => w.slice(0, 5)).filter((s) => !STOP.has(s)))];
 }
 
+const isCorpusFile = (x) => /\.(txt|md|html?)$/i.test(x);
+
+// Broj odluka u zbirci (za kvadratić u sučelju); 0 ako mapa ne postoji.
+export async function count() {
+  try {
+    return (await fs.readdir(config.corpusDir)).filter(isCorpusFile).length;
+  } catch {
+    return 0;
+  }
+}
+
 async function loadCorpus() {
   let files = [];
   try {
@@ -22,7 +33,7 @@ async function loadCorpus() {
     return [];
   }
   const docs = [];
-  for (const f of files.filter((x) => /\.(txt|md|html?)$/i.test(x))) {
+  for (const f of files.filter(isCorpusFile)) {
     const raw = await fs.readFile(path.join(config.corpusDir, f), 'utf8');
     const tekst = /\.html?$/i.test(f) ? decisionTextFromHtml(raw) : raw;
     docs.push({ url: `local:${f}`, naslov: f, tekst, izvor: 'lokalna zbirka' });

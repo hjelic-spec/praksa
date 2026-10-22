@@ -65,6 +65,14 @@ test('postavljanje, prijava, postavke, promjena lozinke i odjava', async () => {
   const m = await call('/api/postavke', { method: 'POST', cookie: login.cookie, body: { model: 'claude-sonnet-5-5' } });
   assert.equal(m.data.model, 'claude-sonnet-5-5');
   assert.equal((await call('/api/info', { cookie: login.cookie })).data.model, 'claude-sonnet-5-5');
+
+  // Broj odluka u lokalnoj zbirci (kvadratić iznad tražilice); računaju se samo .txt/.md/.html.
+  assert.equal((await call('/api/info', { cookie: login.cookie })).data.lokalnaZbirka, 0, 'mapa ne postoji');
+  await fs.mkdir(path.join(tmp, 'corpus'), { recursive: true });
+  await fs.writeFile(path.join(tmp, 'corpus', 'a.txt'), 'x');
+  await fs.writeFile(path.join(tmp, 'corpus', 'b.html'), 'x');
+  await fs.writeFile(path.join(tmp, 'corpus', 'c.pdf'), 'x');
+  assert.equal((await call('/api/info', { cookie: login.cookie })).data.lokalnaZbirka, 2);
   assert.equal(JSON.parse(await fs.readFile(path.join(tmp, 'postavke.json'), 'utf8')).model, 'claude-sonnet-5-5', 'izbor se pamti');
 
   assert.equal((await call('/api/auth/lozinka', { method: 'POST', cookie: login.cookie, body: { stara: 'tajna-lozinka', nova: 'nova-lozinka-1' } })).status, 200);

@@ -126,3 +126,39 @@ test('jedna greška tražilice ne prekida ostale upite; neispravan datum iz mode
   assert.deepEqual(filters, { datumDo: '2024-12-31' });
   assert.ok(r.upozorenja.some((u) => u.includes('istek vremena')));
 });
+
+test('opcije: isključeno europsko pravo i lokalna zbirka', async () => {
+  const seen = { assess: [], answer: [], searched: [] };
+  const l = {
+    ...llm,
+    // Model "ne posluša" uputu i ipak vrati pretpostavke o pravu EU – pipeline ih mora ukloniti.
+    async assessDecision(o, p, d, t, track, opc) {
+      seen.assess.push(opc);
+      return { ...(await llm.assessDecision(o, p, d)), moguce_eu_poveznice: [{ akt: 'Direktiva 93/13/EEZ', obrazlozenje: 'x' }] };
+    },
+    async answerQuery(o, p, items, track, opc) {
+      seen.answer.push(opc);
+      return { ...(await llm.answerQuery(o, p, items)), veza_s_pravom_eu: 'Uredba 261/2004' };
+    },
+  };
+  const named = (name) => ({ ...source(), async search(q, o) { seen.searched.push(name); return source().search(q, o); } });
+  const r = await runQuery({
+    opis: 'otkazan let zbog štrajka', sources: ['t', 'local'], opcije: { pravoEu: false, lokalnaZbirka: false },
+    deps: { llm: l, sources: { t: named('t'), local: named('local') } },
+  });
+  assert.deepEqual([...new Set(seen.searched)], ['t'], 'lokalna zbirka se ne pretražuje');
+  assert.ok(seen.assess.every((o) => o.pravoEu === false) && seen.answer[0].pravoEu === false, 'model dobiva uputu');
+  const d1 = r.odluke.find((d) => d.url === 'x:1');
+  assert.deepEqual(d1.euReference, [], 'nema izvlačenja ni provjere EU referenci');
+  assert.equal(d1.ekljp, false);
+  assert.ok(r.odluke.every((d) => d.analiza.moguce_eu_poveznice.length === 0), 'pretpostavke modela uklonjene');
+  assert.equal(r.odgovor.veza_s_pravom_eu, '');
+  assert.deepEqual(r.opcije, { pravoEu: false, lokalnaZbirka: false });
+
+  // Zadano: oboje uključeno, kao prije.
+  seen.searched = [];
+  const z = await runQuery({ opis: 'otkazan let zbog štrajka', sources: ['t', 'local'], deps: { llm, sources: { t: named('t'), local: named('local') } } });
+  assert.deepEqual([...new Set(seen.searched)], ['t', 'local']);
+  assert.ok(z.odluke.find((d) => d.url === 'x:1').euReference.length > 0);
+  assert.deepEqual(z.opcije, { pravoEu: true, lokalnaZbirka: true });
+});

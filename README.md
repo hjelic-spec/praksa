@@ -154,8 +154,18 @@ Za zahtjeve odbijene od sigurnosnih klasifikatora uključen je poslužiteljski `
 
 ## Lokalna zbirka
 
-Odluke spremljene kao `.txt`, `.md` ili `.html` u `data/corpus/` pretražuju se zajedno s online izvorom
-(korisno za odluke s portala Vrhovnog suda ili za rad bez mreže).
+Odluke spremljene kao `.txt`, `.md` ili `.html` u `data/corpus/` (u Windows aplikaciji `%APPDATA%\Praksa\corpus`)
+pretražuju se zajedno s online izvorom (korisno za odluke s portala Vrhovnog suda ili za rad bez mreže).
+
+## Opcije pretraživanja
+
+Iznad polja za pretragu su dva kvadratića; izbor se pamti u pregledniku i sprema uz svaku pretragu.
+
+- **Europsko pravo (EU i EKLJP)** – zadano uključeno. Isključeno: ne izvlače se reference na pravo EU i EKLJP,
+  ne provjeravaju se u CELLAR-u, model ne iznosi pretpostavke o vezi s pravom EU i odgovor nema odjeljak o pravu EU
+  (ta se polja prazne u kodu, neovisno o modelu).
+- **Lokalna zbirka** – pretražuje i lokalnu zbirku; prikazuje broj odluka u njoj, a kad je prazna, onemogućen je
+  (administrator vidi u koju mapu dodati odluke). Osim odluke.sudovi.hr to je trenutno jedini izvor.
 
 ## Struktura
 

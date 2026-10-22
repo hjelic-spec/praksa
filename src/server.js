@@ -10,7 +10,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { runQuery } from './pipeline.js';
+import { runQuery, DEFAULT_OPCIJE } from './pipeline.js';
+import * as localSource from './sources/local.js';
 import { supportedFilters } from './sources/odluke.js';
 import * as store from './store.js';
 import { totalCost, selectedDecisions } from './store.js';
@@ -105,6 +106,10 @@ const routes = [
 
   ['GET', /^\/api\/info$/, async (req, m, res, { user }) => [200, {
     izvori: config.sources,
+    // Broj odluka u lokalnoj zbirci; null ako izvor "local" nije uključen (PRAKSA_SOURCES).
+    lokalnaZbirka: config.sources.includes('local') ? await localSource.count() : null,
+    // Stvarna mapa zbirke (u Windows aplikaciji je u korisnikovu profilu) – samo administratoru.
+    lokalnaZbirkaMapa: user.uloga === 'admin' ? config.corpusDir : undefined,
     filteri: supportedFilters(),
     model: config.model,
     maxOdluka: config.maxDecisions,
@@ -130,7 +135,7 @@ const routes = [
     return [200, auth.publicUser(u)];
   }, 'admin'],
 
-  // Pretraga: samo opis (i neobavezni datumi). Sprema se u aktivni predmet ili u zadani
+  // Pretraga: opis, neobavezni datumi i opcije (europsko pravo, lokalna zbirka). Sprema se u aktivni predmet ili u zadani
   // "Spremljene odluke", pa je povijest pretraga uvijek dostupna.
   ['POST', /^\/api\/upit$/, async (req, m, res, { user, store }) => {
     const b = await readBody(req);
@@ -139,12 +144,14 @@ const routes = [
     if (!publicSettings().imaKljuc) return [400, { greska: user.uloga === 'admin' ? 'API ključ nije postavljen. Upišite ga u Postavkama.' : 'Pretraga trenutačno nije dostupna (administrator nije postavio API ključ).' }];
     const predmetId = b.predmetId ? (await store.getPredmet(b.predmetId)).id : (await store.ensureDefaultPredmet()).id;
     const filters = Object.fromEntries(Object.entries(b.filters ?? {}).filter(([, v]) => typeof v === 'string' && v));
+    // Kvadratići iznad tražilice; što nije poslano kao true/false ostaje zadano.
+    const opcije = Object.fromEntries(Object.keys(DEFAULT_OPCIJE).map((k) => [k, typeof b.opcije?.[k] === 'boolean' ? b.opcije[k] : DEFAULT_OPCIJE[k]]));
     const id = crypto.randomUUID();
     const job = { userId: user.id, status: 'u tijeku', napredak: [], rezultat: null, greska: null, predmetId, pretragaId: null };
     jobs.set(id, job);
-    runQuery({ opis, filters }, (p) => job.napredak.push(p))
+    runQuery({ opis, filters, opcije }, (p) => job.napredak.push(p))
       .then(async (r) => {
-        const pretraga = { id: crypto.randomUUID().slice(0, 8), datum: new Date().toISOString(), opis, filters, rezultat: r };
+        const pretraga = { id: crypto.randomUUID().slice(0, 8), datum: new Date().toISOString(), opis, filters, opcije, rezultat: r };
         await store.addPretraga(predmetId, pretraga);
         job.pretragaId = pretraga.id;
         job.rezultat = r;
