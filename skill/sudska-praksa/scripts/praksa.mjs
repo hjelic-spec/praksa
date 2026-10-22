@@ -14952,6 +14952,15 @@ function readJson(file) {
 var odlukeConfig;
 var config = {
   root: root2,
+  // Verzija aplikacije (package.json je i u Windows instalaciji); prikazuje se u Postavkama.
+  // Čita se tek pri upotrebi: zapakirani skill nema package.json, pa je ondje null.
+  get verzija() {
+    try {
+      return readJson("package.json").version;
+    } catch {
+      return null;
+    }
+  },
   port: Number(process.env.PORT ?? 3e3),
   // Model se bira u Postavkama (src/settings.js); PRAKSA_MODEL vrijedi dok se ondje ne odabere drugi.
   model: process.env.PRAKSA_MODEL ?? DEFAULT_MODEL,

@@ -95,6 +95,10 @@ npm run dist         # izradi instalaciju: dist/Praksa Setup <verzija>.exe (prek
 npm run app          # pokreni aplikaciju iz izvornog koda
 ```
 
+Nova verzija: povećajte broj u `package.json` (`npm version <x.y.z> --no-git-tag-version`), upišite promjene u
+`CHANGELOG.md` i izradite instalaciju; korisnici je instaliraju preko postojeće, a podaci u `%APPDATA%\Praksa` ostaju.
+Verzija se vidi na dnu Postavki.
+
 - **Ugrađena prijava:** `postavi-prijavu` sprema korisničko ime i scrypt sažetak lozinke u `src/prijava-ugradena.json`
   (nije u gitu). Instalacija tada nema prvog postavljanja – na bilo kojem računalu otvara se samo s tim podacima.
   Ugrađena prijava pri prvom pokretanju postaje administratorski račun u `korisnici.json`; promijenjena lozinka sprema se ondje.

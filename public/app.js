@@ -533,6 +533,7 @@ $('#odjava').addEventListener('click', async () => {
 async function init() {
   const info = await api('/api/info');
   state.uloga = info.uloga;
+  $('#verzija').textContent = info.verzija ? `Praksa ${info.verzija}` : '';
   const isAdmin = info.uloga === 'admin';
   $('#korisnik').textContent = `Prijavljeni: ${info.ime ? `${info.ime} (${info.korisnik})` : info.korisnik}${isAdmin ? ' · administrator' : ''}`;
   $('#admin-postavke').hidden = !isAdmin;

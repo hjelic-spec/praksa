@@ -105,6 +105,7 @@ const routes = [
   ['POST', /^\/api\/cjenik\/osvjezi$/, async () => [200, await refreshPricing()], 'admin'],
 
   ['GET', /^\/api\/info$/, async (req, m, res, { user }) => [200, {
+    verzija: config.verzija,
     izvori: config.sources,
     // Broj odluka u lokalnoj zbirci; null ako izvor "local" nije uključen (PRAKSA_SOURCES).
     lokalnaZbirka: config.sources.includes('local') ? await localSource.count() : null,
