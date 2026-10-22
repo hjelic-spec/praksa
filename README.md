@@ -178,6 +178,14 @@ mkdir -p ~/.claude/skills/sudska-praksa && cp -r skill/sudska-praksa/. ~/.claude
 
 Zatim u Claude Codeu npr. „Nađi sudsku praksu: putnik je ozlijeđen kad je autobus naglo zakočio.”
 
+**Dijeljenje s drugima:** mapa `skill/sudska-praksa` je samostalna (SKILL.md, zapakirana skripta, `UPUTE.txt`
+za primatelja i `THIRD_PARTY_LICENSES.txt` s licencama zapakiranih biblioteka, koje se izrađuju pri
+`npm run skill:build`). ZIP za slanje (PowerShell, iz mape repozitorija):
+
+```powershell
+Compress-Archive -Path skill\sudska-praksa -DestinationPath sudska-praksa.zip -Force
+```
+
 Ograničenja koja treba znati:
 - skripta dohvaća odluke s računala na kojem radi; u Claude Codeu ili Coworku na vlastitom računalu to je
   vaša mreža. U pregledniku na claude.ai skripte se izvode u Anthropicovu okruženju čiji je mrežni pristup

@@ -9,7 +9,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { build } from 'esbuild';
-import { buildOptions, outFile, outDir } from '../scripts/build-skill.js';
+import { buildOptions, outFile, outDir, licensesFile, thirdPartyLicenses } from '../scripts/build-skill.js';
 
 const run = promisify(execFile);
 const env = { ...process.env, PRAKSA_VERIFY_EU: '0' };
@@ -27,6 +27,11 @@ test('zapakirana skripta odgovara izvornom kodu (npm run skill:build)', async ()
   const cfg = await fs.readFile(path.join(outDir, 'odluke.config.json'), 'utf8');
   const src = await fs.readFile(new URL('../src/sources/odluke.config.json', import.meta.url), 'utf8');
   assert.equal(cfg, src, 'kopija odluke.config.json u skillu je zastarjela');
+  // Licence svih zapakiranih biblioteka (uključujući više verzija istog paketa).
+  const licences = await thirdPartyLicenses(r.metafile);
+  assert.ok(licences === await fs.readFile(licensesFile, 'utf8'), 'THIRD_PARTY_LICENSES.txt je zastario: pokrenite npm run skill:build');
+  assert.match(licences, /entities@6\.\d+\.\d+/);
+  assert.match(licences, /cheerio@\d/);
 });
 
 test('dohvati, citat i povezi na lokalnim datotekama', async () => {
