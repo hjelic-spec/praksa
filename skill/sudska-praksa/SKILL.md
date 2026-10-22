@@ -132,7 +132,7 @@ se vjerojatno promijenila: to treba podesiti u `scripts/odluke.config.json` (upu
 
 | Varijabla | Zadano | Značenje |
 |---|---|---|
-| `PRAKSA_MIN_DELAY_MS` | 1500 | razmak između zahtjeva prema istom poslužitelju |
+| `PRAKSA_MIN_DELAY_MS` | 3000 | razmak između zahtjeva prema istom poslužitelju (jedan zahtjev u 3 s) |
 | `PRAKSA_CACHE_DIR` | `~/.cache/praksa-skill` | predmemorija dohvaćenih stranica |
 | `PRAKSA_VERIFY_EU` | 1 | `0` isključuje provjeru CELEX-a u CELLAR-u |
 | `PRAKSA_USER_AGENT` | … | kontakt za operatera stranice |

@@ -35,7 +35,8 @@ export const config = {
   // Odluke dulje od ovoga se skraćuju prije analize; skraćivanje se uvijek prikazuje korisniku.
   maxDecisionChars: Number(process.env.PRAKSA_MAX_CHARS ?? 150_000),
   analysisConcurrency: Number(process.env.PRAKSA_CONCURRENCY ?? 3),
-  minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 1500),
+  // Najmanji razmak između zahtjeva prema istom poslužitelju (odluke.sudovi.hr): jedan zahtjev u 3 s.
+  minDelayMs: Number(process.env.PRAKSA_MIN_DELAY_MS ?? 3000),
   userAgent: process.env.PRAKSA_USER_AGENT ?? 'praksa-preglednik/0.1 (istrazivacki alat; kontakt: postavite PRAKSA_USER_AGENT)',
   dataDir,
   // PRAKSA_CACHE_DIR koristi skill (predmemorija izvan mape skilla); čita se pri svakoj upotrebi.
