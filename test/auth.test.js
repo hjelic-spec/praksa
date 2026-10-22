@@ -56,6 +56,25 @@ test('postavljanje, prijava, postavke, promjena lozinke i odjava', async () => {
   assert.deepEqual([s.data.imaKljuc, s.data.kljucZavrsava, s.data.maxOdluka], [true, 'WXYZ', 7]);
   assert.ok(!JSON.stringify(s.data).includes('aaaa'), 'ključ se ne vraća sučelju');
 
+  // Izbor modela: zadani je Opus 5.5, popis nosi cijene iz cjenika, nepoznat model se odbija bez ikakve promjene.
+  assert.equal(s.data.model, 'claude-opus-5-5');
+  assert.ok(s.data.modeli.some((m) => m.id === 'claude-sonnet-5-5' && m.cijena?.ulaz > 0));
+  const bad = await call('/api/postavke', { method: 'POST', cookie: login.cookie, body: { model: 'gpt-5', maxOdluka: 9 } });
+  assert.equal(bad.status, 400);
+  assert.equal((await call('/api/postavke', { cookie: login.cookie })).data.maxOdluka, 7, 'neuspjelo spremanje ništa ne mijenja');
+  const m = await call('/api/postavke', { method: 'POST', cookie: login.cookie, body: { model: 'claude-sonnet-5-5' } });
+  assert.equal(m.data.model, 'claude-sonnet-5-5');
+  assert.equal((await call('/api/info', { cookie: login.cookie })).data.model, 'claude-sonnet-5-5');
+
+  // Broj odluka u lokalnoj zbirci (kvadratić iznad tražilice); računaju se samo .txt/.md/.html.
+  assert.equal((await call('/api/info', { cookie: login.cookie })).data.lokalnaZbirka, 0, 'mapa ne postoji');
+  await fs.mkdir(path.join(tmp, 'corpus'), { recursive: true });
+  await fs.writeFile(path.join(tmp, 'corpus', 'a.txt'), 'x');
+  await fs.writeFile(path.join(tmp, 'corpus', 'b.html'), 'x');
+  await fs.writeFile(path.join(tmp, 'corpus', 'c.pdf'), 'x');
+  assert.equal((await call('/api/info', { cookie: login.cookie })).data.lokalnaZbirka, 2);
+  assert.equal(JSON.parse(await fs.readFile(path.join(tmp, 'postavke.json'), 'utf8')).model, 'claude-sonnet-5-5', 'izbor se pamti');
+
   assert.equal((await call('/api/auth/lozinka', { method: 'POST', cookie: login.cookie, body: { stara: 'tajna-lozinka', nova: 'nova-lozinka-1' } })).status, 200);
   assert.equal((await call('/api/predmeti', { cookie: login.cookie })).status, 401, 'promjena lozinke odjavljuje');
   const again = await call('/api/auth/prijava', { method: 'POST', body: { korisnik: 'odvjetnik', lozinka: 'nova-lozinka-1' } });

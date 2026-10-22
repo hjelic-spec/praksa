@@ -117,7 +117,10 @@ export const AssessmentSchema = z.object({
   moguce_eu_poveznice: EuLinks.describe('Pretpostavke o vezi s pravom EU koje NISU izričito navedene u odluci'),
 });
 
-export async function assessDecision(opis, plan, decision, tekst, track) {
+// Uputa kad korisnik isključi europsko pravo; pipeline.js ta polja ionako prazni.
+const BEZ_EU = '\nKorisnik nije tražio europsko pravo: polje moguce_eu_poveznice ostavi prazno i ne bavi se pravom EU ni EKLJP-om.';
+
+export async function assessDecision(opis, plan, decision, tekst, track, { pravoEu = true } = {}) {
   const meta = decision.meta ?? {};
   return structured(AssessmentSchema, `<upit_korisnika>
 ${opis}
@@ -131,7 +134,7 @@ ${opis}
 ${tekst}
 </odluka>
 
-Analiziraj odluku kao mogući presedan za upit korisnika, prema shemi.`, { effort: 'medium', track });
+Analiziraj odluku kao mogući presedan za upit korisnika, prema shemi.${pravoEu ? '' : BEZ_EU}`, { effort: 'medium', track });
 }
 
 // ---------- 4. odgovor na upit ----------
@@ -145,7 +148,7 @@ export const AnswerSchema = z.object({
   veza_s_pravom_eu: z.string().describe('Samo na temelju referenci u odlukama i jasno označenih pretpostavki; prazno ako je nema'),
 });
 
-export async function answerQuery(opis, plan, items, track) {
+export async function answerQuery(opis, plan, items, track, { pravoEu = true } = {}) {
   const compact = items.map((a, i) => ({
     br: i + 1,
     oznaka: a.meta?.poslovniBroj ?? a.naslov,
@@ -170,5 +173,5 @@ ${opis}
 ${JSON.stringify(compact, null, 1)}
 </odluke>
 
-Odgovori na upit isključivo na temelju ovih odluka, sažeto – pojedinosti su na karticama odluka, pa ih ne ponavljaj. Upućuj na odluke njihovim brojem [br]. Veću težinu daj višim sudovima (Ustavni, Vrhovni) i pravomoćnim odlukama.`, { effort: 'high', track });
+Odgovori na upit isključivo na temelju ovih odluka, sažeto – pojedinosti su na karticama odluka, pa ih ne ponavljaj. Upućuj na odluke njihovim brojem [br]. Veću težinu daj višim sudovima (Ustavni, Vrhovni) i pravomoćnim odlukama.${pravoEu ? '' : BEZ_EU.replace('polje moguce_eu_poveznice', 'polje veza_s_pravom_eu')}`, { effort: 'high', track });
 }

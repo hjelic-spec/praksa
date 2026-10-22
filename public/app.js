@@ -66,6 +66,37 @@ function clearResults() {
   $('#ostale').innerHTML = '';
 }
 
+// ---------- opcije pretraživanja (kvadratići iznad tražilice) ----------
+
+// Izbor se pamti u pregledniku; bez pristupa pohrani vrijede zadane vrijednosti.
+const OPCIJE_KLJUC = 'praksa.opcije';
+function spremiOpcije() {
+  try { localStorage.setItem(OPCIJE_KLJUC, JSON.stringify({ pravoEu: $('#opc-eu').checked, lokalnaZbirka: $('#opc-lokalno').checked })); } catch { /* bez pohrane */ }
+}
+// 1 odluka, 2–4 odluke, 5–20 odluka, 21 odluka, 22 odluke…
+const odlukaRijec = (n) => (n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14) ? 'odluke' : 'odluka');
+
+function postaviOpcije(lokalnaZbirka, mapa) {
+  let spremljeno = {};
+  try { spremljeno = JSON.parse(localStorage.getItem(OPCIJE_KLJUC) ?? '{}') ?? {}; } catch { /* bez pohrane */ }
+  if (typeof spremljeno.pravoEu === 'boolean') $('#opc-eu').checked = spremljeno.pravoEu;
+  const lok = $('#opc-lokalno');
+  if (lokalnaZbirka === null) {
+    $('#opc-lokalno-oznaka').hidden = true; // izvor nije uključen u PRAKSA_SOURCES
+    lok.checked = false;
+  } else if (lokalnaZbirka === 0) {
+    lok.checked = false;
+    lok.disabled = true;
+    $('#opc-lokalno-oznaka').classList.add('onemoguceno');
+    $('#opc-lokalno-broj').textContent = mapa ? `(prazna – odluke (.txt, .html) dodajte u ${mapa})` : '(prazna – odluke dodaje administrator)';
+  } else {
+    if (typeof spremljeno.lokalnaZbirka === 'boolean') lok.checked = spremljeno.lokalnaZbirka;
+    $('#opc-lokalno-broj').textContent = `(${lokalnaZbirka} ${odlukaRijec(lokalnaZbirka)})`;
+  }
+}
+$('#opc-eu').addEventListener('change', spremiOpcije);
+$('#opc-lokalno').addEventListener('change', spremiOpcije);
+
 $('#upit').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = $('#trazi');
@@ -76,7 +107,8 @@ $('#upit').addEventListener('submit', async (e) => {
   $('#status').innerHTML = '<span class="spinner"></span> Šaljem upit…';
   const filters = Object.fromEntries([...document.querySelectorAll('#filteri input')].filter((i) => i.value).map((i) => [i.name, i.value]));
   try {
-    const { id } = await api('/api/upit', { method: 'POST', body: { opis: opis.value, filters, predmetId: state.predmetId } });
+    const opcije = { pravoEu: $('#opc-eu').checked, lokalnaZbirka: !$('#opc-lokalno').disabled && $('#opc-lokalno').checked };
+    const { id } = await api('/api/upit', { method: 'POST', body: { opis: opis.value, filters, opcije, predmetId: state.predmetId } });
     for (;;) {
       await new Promise((r) => setTimeout(r, 1500));
       const job = await api(`/api/upit/${id}`);
@@ -214,7 +246,8 @@ function render(r, saved) {
   const status = [
     r.pregledano ? `pregledano ${r.pregledano} odluka` : null,
     `prikazano ${glavne.length} relevantnih`,
-    r.trosak ? `trošak ${usd(r.trosak.usd)}` : null,
+    r.opcije?.pravoEu === false ? 'bez europskog prava' : null,
+    r.trosak ? `trošak ${usd(r.trosak.usd)}${r.trosak.modeli?.length ? ` (${r.trosak.modeli.join(', ')})` : ''}` : null,
     saved ? `spremljena pretraga od ${new Date(saved.datum).toLocaleString('hr-HR')}` : null,
   ].filter(Boolean).join(' · ');
   const filt = r.primijenjeniFilteri && Object.keys(r.primijenjeniFilteri).length
@@ -442,10 +475,22 @@ $('#ladica').addEventListener('click', async (e) => {
 async function loadPostavke() {
   const s = await api('/api/postavke');
   $('#kljuc-stanje').textContent = s.imaKljuc ? `Ključ je postavljen (završava s …${s.kljucZavrsava}).` : 'Ključ NIJE postavljen – pretraga neće raditi.';
+  renderModeli(s);
   $('#max-odluka').value = s.maxOdluka;
   $('#kontakt').value = s.kontakt;
   renderCjenik(await api('/api/cjenik'));
   return s;
+}
+
+const cijenaModela = (p) => (p ? `$${p.ulaz} ulaz / $${p.izlaz} izlaz po MTok` : 'cijena nije u cjeniku');
+
+function renderModeli(s) {
+  const sel = $('#model');
+  sel.innerHTML = s.modeli.map((m) => `<option value="${esc(m.id)}">${esc(m.naziv)} – ${esc(cijenaModela(m.cijena))}</option>`).join('');
+  sel.value = s.model;
+  const opis = () => { $('#model-opis').textContent = s.modeli.find((m) => m.id === sel.value)?.opis ?? ''; };
+  sel.onchange = opis;
+  opis();
 }
 
 function renderCjenik(c) {
@@ -465,7 +510,7 @@ $('#osvjezi-cjenik').addEventListener('click', async () => {
 $('#postavke-forma').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
-    await api('/api/postavke', { method: 'POST', body: { apiKey: $('#api-kljuc').value.trim(), maxOdluka: $('#max-odluka').value, kontakt: $('#kontakt').value } });
+    await api('/api/postavke', { method: 'POST', body: { apiKey: $('#api-kljuc').value.trim(), model: $('#model').value, maxOdluka: $('#max-odluka').value, kontakt: $('#kontakt').value } });
     $('#api-kljuc').value = '';
     await loadPostavke();
     $('#postavke-poruka').textContent = 'Postavke su spremljene.';
@@ -495,6 +540,7 @@ async function init() {
   $('#broj-cekanje').textContent = info.naCekanju || '';
   $('#filteri').innerHTML = info.filteri.map((f) =>
     `<label>${esc(FILTER_LABELS[f] ?? f)} <input name="${esc(f)}" type="date"></label>`).join('');
+  postaviOpcije(info.lokalnaZbirka, info.lokalnaZbirkaMapa);
   await loadPredmeti();
   if (!info.imaKljuc && isAdmin) {
     openDrawer('postavke');

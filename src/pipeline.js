@@ -83,9 +83,16 @@ function mergeFilters(filters = {}, plan) {
 // Viši sud i veća relevantnost prvo.
 const byRelevance = (a, b) => b.analiza.relevantnost - a.analiza.relevantnost || (a.tezina?.razina ?? 9) - (b.tezina?.razina ?? 9);
 
-export async function runQuery({ opis, filters = {}, sources = config.sources, deps = {} }, progress = () => {}) {
+// opcije (kvadratići iznad tražilice): pravoEu – reference na pravo EU i EKLJP, provjera u CELLAR-u
+// i pretpostavke modela o vezi s pravom EU; lokalnaZbirka – pretražuje se i data/corpus.
+// Europsko pravo je zadano isključeno: uključuje ga korisnik kad mu treba.
+export const DEFAULT_OPCIJE = { pravoEu: false, lokalnaZbirka: true };
+
+export async function runQuery({ opis, filters = {}, sources = config.sources, opcije = {}, deps = {} }, progress = () => {}) {
   const L = deps.llm ?? llm;
   const S = deps.sources ?? SOURCES;
+  const opc = { ...DEFAULT_OPCIJE, ...opcije };
+  if (!opc.lokalnaZbirka) sources = sources.filter((name) => name !== 'local');
   const upozorenja = [];
   const costs = createCostTracker();
   const track = (model, usage) => costs.add(model, usage);
@@ -94,30 +101,46 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, d
   progress({ korak: 'razrada', poruka: 'Razumijem upit i pripremam pretragu…' });
   const plan = await L.planQuery(opis, track);
   const primijenjeniFilteri = mergeFilters(filters, plan);
+  // Isti upit (drukčija velika slova ili razmaci) ne šalje se tražilici dvaput.
+  const seenQ = new Set();
+  plan.upiti = (plan.upiti ?? []).map((q) => q.trim()).filter((q) => {
+    const k = q.toLowerCase().replace(/\s+/g, ' ');
+    return q && !seenQ.has(k) && seenQ.add(k);
+  });
 
   progress({ korak: 'pretrazivanje', poruka: `Pretražujem odluke (${plan.upiti.length} upita)…` });
-  const refs = new Map();
-  for (const name of sources) {
-    const src = S[name];
-    if (!src) continue;
+  // Izvori se pretražuju paralelno, a upiti unutar izvora do searchConcurrency istovremeno.
+  // Rezultati se spajaju redom upita, pa je ishod isti kao kod pretrage jednog po jednog.
+  const perSource = await Promise.all(sources.filter((name) => S[name]).map(async (name) => {
     let failures = 0;
-    for (const q of plan.upiti) {
+    let successes = 0;
+    const results = await mapLimit(plan.upiti, config.searchConcurrency, async (q) => {
+      // Tri neuspjela upita bez ijednog uspješnog znače da izvor ne radi: ostali se ne šalju.
+      if (failures >= 3 && !successes) return null;
       try {
-        for (const r of await src.search(q, { filters: primijenjeniFilteri, limit: config.resultsPerQuery })) {
-          if (!refs.has(r.url)) refs.set(r.url, { ...r, upiti: [q], src: name });
-          else refs.get(r.url).upiti.push(q);
-        }
-        failures = 0;
+        const found = await S[name].search(q, { filters: primijenjeniFilteri, limit: config.resultsPerQuery });
+        successes++;
+        return found;
       } catch (e) {
+        failures++;
         upozorenja.push(`Izvor "${name}", upit "${q}": ${e.message}`);
-        // Pojedinačna greška (npr. istek vremena) ne prekida pretragu; tri zaredom znače da izvor ne radi.
-        if (++failures >= 3) break;
+        return null;
       }
-    }
+    });
+    return { name, results };
+  }));
+  const refs = new Map();
+  for (const { name, results } of perSource) {
+    results.forEach((found, i) => {
+      for (const r of found ?? []) {
+        if (!refs.has(r.url)) refs.set(r.url, { ...r, upiti: [plan.upiti[i]], src: name });
+        else refs.get(r.url).upiti.push(plan.upiti[i]);
+      }
+    });
   }
   // Prednost odlukama koje je pronašlo više upita.
   const pool = [...refs.values()].sort((a, b) => b.upiti.length - a.upiti.length).slice(0, config.maxCandidates);
-  const base = { opis, plan, primijenjeniFilteri, pregledano: pool.length };
+  const base = { opis, plan, primijenjeniFilteri, opcije: opc, pregledano: pool.length };
   if (!pool.length) {
     return { ...base, odluke: [], odgovor: null, trosak: costs.summary, upozorenja: [...upozorenja, 'Nije pronađena nijedna odluka.'] };
   }
@@ -142,13 +165,15 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, d
       if (!d.tekst || d.tekst.length < 200) throw new Error('tekst odluke nije pronađen na stranici');
       const skraceno = d.tekst.length > config.maxDecisionChars;
       const tekst = skraceno ? d.tekst.slice(0, config.maxDecisionChars) : d.tekst;
-      const analiza = await L.assessDecision(opis, plan, d, tekst, track);
+      const analiza = await L.assessDecision(opis, plan, d, tekst, track, { pravoEu: opc.pravoEu });
+      // Isključeno europsko pravo ne ovisi o tome posluša li model uputu.
+      if (!opc.pravoEu) analiza.moguce_eu_poveznice = [];
       analiza.relevantnost = Math.max(0, Math.min(100, Math.round(analiza.relevantnost)));
       // Svaki citat provjerava se doslovno u tekstu odluke.
       analiza.citati = (analiza.citati ?? []).filter((c) => c.tekst?.trim()).slice(0, 3)
         .map((c) => ({ ...c, provjeren: quoteInText(c.tekst, d.tekst) }));
 
-      const { eu, ekljp } = extractEuReferences(d.tekst);
+      const { eu, ekljp } = opc.pravoEu ? extractEuReferences(d.tekst) : { eu: [], ekljp: false };
       const own = d.meta?.poslovniBroj ? caseKey(d.meta.poslovniBroj) : null;
       const result = {
         url: d.url,
@@ -184,7 +209,8 @@ export async function runQuery({ opis, filters = {}, sources = config.sources, d
   let odgovor = null;
   if (glavne.length) {
     progress({ korak: 'odgovor', poruka: `Sastavljam odgovor… (${usd()})` });
-    odgovor = await L.answerQuery(opis, plan, glavne, track);
+    odgovor = await L.answerQuery(opis, plan, glavne, track, { pravoEu: opc.pravoEu });
+    if (!opc.pravoEu && odgovor) odgovor.veza_s_pravom_eu = '';
   }
   return { ...base, odluke: [...glavne, ...ostale], odgovor, trosak: costs.summary, upozorenja };
 }

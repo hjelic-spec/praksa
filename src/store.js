@@ -53,9 +53,7 @@ export function forUser(userId) {
 
   async function readAll() {
     const files = await fs.readdir(dir).catch(() => []);
-    const out = [];
-    for (const f of files.filter((x) => x.endsWith('.json'))) out.push(JSON.parse(await fs.readFile(path.join(dir, f), 'utf8')));
-    return out;
+    return Promise.all(files.filter((x) => x.endsWith('.json')).map(async (f) => JSON.parse(await fs.readFile(path.join(dir, f), 'utf8'))));
   }
 
   async function getPredmet(id) {
